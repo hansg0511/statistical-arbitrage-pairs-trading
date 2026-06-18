@@ -9,7 +9,7 @@ A statistical arbitrage pairs trading framework that exploits cointegrated equit
 - **Strategy:** Cointegration-based pairs trading (mean-reverting spreads)
 - **Universe:** S&P 500 mega-cap equities (same-sector pairs)
 - **Signal:** Z-score of OLS residuals (entry/exit thresholds)
-- **Validation:** 15-fold walk-forward out-of-sample testing
+- **Validation:** 8-fold walk-forward out-of-sample testing
 - **Market Exposure:** Near-zero beta (~0.003) and correlation (~0.01)
 - **Performance:** Sharpe 0.65, 63% win rate, low drawdowns (1–2% avg per fold)
 
