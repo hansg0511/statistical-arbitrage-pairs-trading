@@ -116,3 +116,12 @@ The system identifies statistically linked equity pairs and trades deviations fr
 ```bash
 pip install -r requirements.txt
 python run_backtest.py
+
+# Specify a custom backtest date range
+python run_backtest.py --start 2018-01-01 --end 2020-12-31
+```
+
+- `--start`: Backtest start date (format: `YYYY-MM-DD`)
+- `--end`: Backtest end date (format: `YYYY-MM-DD`)
+
+If omitted, defaults to 2020-01-01 to 2020-05-31.
