@@ -57,21 +57,30 @@ class PairSelector:
             'correlation': correlation,
             'half_life': ar1_res['half_life'],
             'hedge_ratio': model.params[1],
+            'intercept': model.params[0],
             'phi': ar1_res['phi'],
             'sigma_eq': ar1_res['sigma_eq'],
             'cointegration_pvalue_log': pvalue_log,
             'correlation_log': correlation_log,
             'half_life_log': ar1_res_log['half_life'],
             'hedge_ratio_log': model_log.params[1],
+            'intercept_log': model_log.params[0],
             'phi_log': ar1_res_log['phi'],
             'sigma_eq_log': ar1_res_log['sigma_eq']
         }
         
-    def select_pairs(self, master_df: pd.DataFrame, sector_map: Dict[str, List[str]], start: str, end: str) -> pd.DataFrame:
+    def select_pairs(self, master_df: pd.DataFrame, sector_map: Dict[str, List[str]], start: str, end: str, same_sector_only: bool = True, return_divergence_threshold: Optional[float] = None) -> pd.DataFrame:
         """
-        Analyze pairs within each sector and return cointegrated pairs.
-        Enforces the intra-sector constraint as per strategy design.
+        Analyze pairs and return cointegrated pairs.
+        When same_sector_only=True, restricts pairs to within the same sector.
+        When same_sector_only=False, considers all possible pairs across all sectors.
+        When return_divergence_threshold is set, skips pairs whose cumulative stock returns
+        over the selection window differ by more than the threshold.
+
+        Populates self._stats dict after each call:
+            total_combinations, divergence_skipped, coint_tested, coint_passed
         """
+        self._stats = {'total_combinations': 0, 'divergence_skipped': 0, 'coint_tested': 0, 'coint_passed': 0}
         all_results = []
         
         # Handle MultiIndex or standard DataFrame
@@ -79,9 +88,19 @@ class PairSelector:
             close_prices = master_df['Close']
         else:
             close_prices = master_df
+
+        if same_sector_only:
+            # Original behavior: iterate through sectors to maintain homogeneity
+            sector_iter = sector_map.items()
+        else:
+            # Cross-sector: treat all tickers as one group with a placeholder sector
+            all_tickers = sorted([t for t in set().union(*sector_map.values()) if t in close_prices.columns])
+            if len(all_tickers) < 2:
+                return pd.DataFrame()
+            sector_iter = [('Cross-Sector', all_tickers)]
             
-        # Iterate through sectors to maintain homogeneity
-        for sector, tickers in sector_map.items():
+        # Iterate through sectors (or the single cross-sector group)
+        for sector, tickers in sector_iter:
             # Only use tickers available in the dataframe and SORT ALPHABETICALLY
             # to match the combination order in the original Analysis.py
             available_tickers = sorted([t for t in tickers if t in close_prices.columns])
@@ -92,6 +111,16 @@ class PairSelector:
             sector_results = []
     
             for ticker1, ticker2 in combinations(sector_data.columns, 2):
+                self._stats['total_combinations'] += 1
+                # Return divergence pre-filter: skip pairs with divergent cumulative returns
+                if return_divergence_threshold is not None:
+                    c1, c2 = sector_data[ticker1], sector_data[ticker2]
+                    r1 = c1.iloc[-1] / c1.iloc[0] - 1
+                    r2 = c2.iloc[-1] / c2.iloc[0] - 1
+                    if abs(r1 - r2) > return_divergence_threshold:
+                        self._stats['divergence_skipped'] += 1
+                        continue
+                self._stats['coint_tested'] += 1
                 try:
                     result = self.analyze_pair(sector_data[ticker1], sector_data[ticker2])
                     sector_results.append({
@@ -111,6 +140,7 @@ class PairSelector:
                 all_results.append(filtered_sector)
         
         if not all_results:
+            self._stats['coint_passed'] = 0
             return pd.DataFrame()
 
         df = pd.concat(all_results)
@@ -118,6 +148,8 @@ class PairSelector:
         # 2. Apply run_oos_walkforward.py Strategy Filter (Log P < 0.05)
         # Note: Analysis.py results are already filtered for Raw P < 0.05
         df = df[df['cointegration_pvalue_log'] < self.pvalue_threshold]
+        
+        self._stats['coint_passed'] = len(df)
         
         # 3. Final Rank by Log Space significance as per strategy parameters
         return df.sort_values('cointegration_pvalue_log', ascending=True)

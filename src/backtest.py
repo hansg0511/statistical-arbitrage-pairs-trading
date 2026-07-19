@@ -35,6 +35,8 @@ class PairTradingStrategy(bt.Strategy):
         ('max_holding_days', 15),
         ('equity_fraction', 0.18),
         ('verbose', False),
+        ('earnings_screen', None),
+        ('earnings_block_days', 0),
     )
 
     def log(self, txt, dt=None):
@@ -61,6 +63,8 @@ class PairTradingStrategy(bt.Strategy):
         self.active_trades = {}
         self.trade_logs = []
         self.trade_count = 0
+        self.daily_active_counts = []
+        self.rejected_orders = []
 
     def notify_order(self, order):
         """Track and reset order objects to prevent redundant entry attempts."""
@@ -69,7 +73,16 @@ class PairTradingStrategy(bt.Strategy):
         
         for p in self.pairs:
             if order.data in [p['s1'], p['s2']]:
-                if order.status in [order.Completed]:
+                pair_name = f"{p['s1']._name}-{p['s2']._name}"
+                if order.status == order.Rejected:
+                    self.rejected_orders.append({
+                        'date': self.datas[0].datetime.date(0),
+                        'pair': pair_name,
+                        'reason': 'order_rejected',
+                        'cash': self.broker.getcash(),
+                        'value': self.broker.getvalue()
+                    })
+                elif order.status in [order.Completed]:
                     if order.isbuy():
                         self.log(f'BUY EXECUTED ({order.data._name}), {order.executed.price:.2f}')
                     else:
@@ -79,6 +92,10 @@ class PairTradingStrategy(bt.Strategy):
                 break
 
     def next(self):
+        self.daily_active_counts.append({
+            'date': self.datas[0].datetime.date(0),
+            'count': len(self.active_trades)
+        })
         for p in self.pairs:
             pair_name = f"{p['s1']._name}-{p['s2']._name}"
             pos2 = self.getposition(p['s2']).size
@@ -149,6 +166,16 @@ class PairTradingStrategy(bt.Strategy):
                         if not check_hr_stability(current_hr, anchor_hr, self.p.hr_threshold):
                             continue
 
+                        if self.p.earnings_screen is not None:
+                            s1_name = p['s1']._name
+                            s2_name = p['s2']._name
+                            entry_date = self.datas[0].datetime.date(0)
+                            if (self.p.earnings_screen.has_earnings_in_window(s1_name, entry_date, self.p.max_holding_days, self.p.earnings_block_days)
+                                or self.p.earnings_screen.has_earnings_in_window(s2_name, entry_date, self.p.max_holding_days, self.p.earnings_block_days)):
+                                if self.p.verbose:
+                                    self.log(f'Earnings screen blocked {pair_name}')
+                                continue
+
                         notional = self.broker.getvalue() * self.p.equity_fraction
                         size2 = int(notional / p['s2'].close[0])
                         if self.p.log_space:
@@ -156,15 +183,24 @@ class PairTradingStrategy(bt.Strategy):
                         else:
                             size1 = int(abs(size2 * current_hr))
                         
-                        if size1 > 0 and size2 > 0:
-                            if z <= -self.p.entry_z:
-                                p['order'] = self.buy(p['s2'], size=size2)
-                                if current_hr >= 0: self.sell(p['s1'], size=size1)
-                                else: self.buy(p['s1'], size=size1)
-                            else:
-                                p['order'] = self.sell(p['s2'], size=size2)
-                                if current_hr >= 0: self.buy(p['s1'], size=size1)
-                                else: self.sell(p['s1'], size=size1)
+                        if size1 <= 0 or size2 <= 0:
+                            self.rejected_orders.append({
+                                'date': self.datas[0].datetime.date(0),
+                                'pair': pair_name,
+                                'reason': 'zero_size',
+                                'cash': self.broker.getcash(),
+                                'value': self.broker.getvalue()
+                            })
+                            continue
+
+                        if z <= -self.p.entry_z:
+                            p['order'] = self.buy(p['s2'], size=size2)
+                            if current_hr >= 0: self.sell(p['s1'], size=size1)
+                            else: self.buy(p['s1'], size=size1)
+                        else:
+                            p['order'] = self.sell(p['s2'], size=size2)
+                            if current_hr >= 0: self.buy(p['s1'], size=size1)
+                            else: self.sell(p['s1'], size=size1)
 
                             self.trade_count += 1
                             self.active_trades[pair_name] = {
@@ -205,24 +241,53 @@ def prepare_backtest_data(s1: pd.Series, s2: pd.Series,
                           resid_lb: int, z_lb: int, 
                           test_start: Optional[str] = None,
                           test_end: Optional[str] = None,
-                          log_space: bool = True) -> Dict[str, pd.Series]:
+                          log_space: bool = True,
+                          fixed_params: Optional[Dict[str, float]] = None) -> Dict[str, pd.Series]:
     """
     Utility to pre-calculate all signals and alignment needed for 
     Backtrader feeds.
-    """
-    res_df = compute_residuals(s1, s2, lookback=resid_lb, log_space=log_space)
-    zscore = compute_zscore(res_df['residual'], lookback=z_lb)
     
-    data = {
-        'dateIndex': zscore.index,
-        'zscore': zscore,
-        'hedge_ratio': res_df['hedge_ratio'],
-        'intercept': res_df['intercept'],
-        'phi': res_df['phi'],
-        'sigma_eq': res_df['sigma_eq'],
-        'rolling_std': res_df['residual'].rolling(z_lb).std(),
-        'rolling_mean': res_df['residual'].rolling(z_lb).mean()
-    }
+    When fixed_params is provided (dict with 'hedge_ratio', 'intercept', 
+    'mu', 'sigma'), uses formation-period fixed parameters for Z-score 
+    calculation instead of rolling estimates.
+    """
+    if fixed_params is not None:
+        hr = fixed_params['hedge_ratio']
+        intercept = fixed_params['intercept']
+        mu = fixed_params['mu']
+        sigma = fixed_params['sigma']
+        
+        if log_space:
+            spread = np.log(s2) - (intercept + hr * np.log(s1))
+        else:
+            spread = s2 - (intercept + hr * s1)
+        
+        zscore = (spread - mu) / (sigma + 1e-10)
+        
+        data = {
+            'dateIndex': zscore.index,
+            'zscore': zscore,
+            'hedge_ratio': pd.Series(hr, index=zscore.index),
+            'intercept': pd.Series(intercept, index=zscore.index),
+            'phi': pd.Series(np.nan, index=zscore.index),
+            'sigma_eq': pd.Series(np.nan, index=zscore.index),
+            'rolling_std': pd.Series(sigma, index=zscore.index),
+            'rolling_mean': pd.Series(mu, index=zscore.index)
+        }
+    else:
+        res_df = compute_residuals(s1, s2, lookback=resid_lb, log_space=log_space)
+        zscore = compute_zscore(res_df['residual'], lookback=z_lb)
+        
+        data = {
+            'dateIndex': zscore.index,
+            'zscore': zscore,
+            'hedge_ratio': res_df['hedge_ratio'],
+            'intercept': res_df['intercept'],
+            'phi': res_df['phi'],
+            'sigma_eq': res_df['sigma_eq'],
+            'rolling_std': res_df['residual'].rolling(z_lb).std(),
+            'rolling_mean': res_df['residual'].rolling(z_lb).mean()
+        }
     
     if test_start and test_end:
         idx = data['dateIndex']
