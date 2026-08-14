@@ -1,3 +1,4 @@
+import concurrent.futures
 import pandas as pd
 import yfinance as yf
 from datetime import timedelta
@@ -8,26 +9,35 @@ class DataLoader:
     Handles fetching historical price data from external sources 
     and managing local data consistency.
     """
-    def __init__(self, tickers: List[str], start: str, end: str, lookback: int = 200, use_warmup: bool = True):
+    def __init__(self, tickers: List[str], start: str, end: str, lookback: int = 200, use_warmup: bool = True, timeout: int = 120):
         self.tickers = tickers
         self.start = start
         self.end = end
         self.lookback = lookback
         self.use_warmup = use_warmup
+        self.timeout = timeout
 
     def fetch_prices(self) -> pd.DataFrame:
-        """Fetch daily OHLC data for the given tickers with an optional warmup buffer."""
-        # Add buffer for rolling lookbacks if requested
+        """Fetch daily OHLC data for the given tickers with an optional warmup buffer and timeout."""
         if self.use_warmup:
-            prestart = pd.to_datetime(self.start) - timedelta(days=self.lookback + 50) 
+            prestart = pd.to_datetime(self.start) - timedelta(days=self.lookback + 50)
         else:
             prestart = self.start
-            
-        df = yf.download(self.tickers, start=prestart, end=self.end, progress=False)
-        
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(yf.download, self.tickers, start=prestart, end=self.end, progress=False)
+            try:
+                df = fut.result(timeout=self.timeout)
+            except concurrent.futures.TimeoutError:
+                print(f"ERROR: yfinance download timed out after {self.timeout}s for {len(self.tickers)} tickers")
+                return pd.DataFrame()
+            except Exception as e:
+                print(f"ERROR: yfinance download failed: {e}")
+                return pd.DataFrame()
+
         if isinstance(df, pd.Series):
             df = df.to_frame()
-            
+
         return df.dropna(how='all')
 
 class DataManager:

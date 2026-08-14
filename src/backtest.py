@@ -34,6 +34,8 @@ class PairTradingStrategy(bt.Strategy):
         ('lock_std_for_zscore', True),
         ('max_holding_days', 15),
         ('equity_fraction', 0.18),
+        ('dollar_neutral', False),
+        ('initial_cash', 1000000.0),
         ('verbose', False),
         ('earnings_screen', None),
         ('earnings_block_days', 0),
@@ -65,6 +67,7 @@ class PairTradingStrategy(bt.Strategy):
         self.trade_count = 0
         self.daily_active_counts = []
         self.rejected_orders = []
+        self.trade_marks = []
 
     def notify_order(self, order):
         """Track and reset order objects to prevent redundant entry attempts."""
@@ -92,9 +95,11 @@ class PairTradingStrategy(bt.Strategy):
                 break
 
     def next(self):
+        deployed = sum(info['target_notional'] for info in self.active_trades.values())
         self.daily_active_counts.append({
             'date': self.datas[0].datetime.date(0),
-            'count': len(self.active_trades)
+            'count': len(self.active_trades),
+            'deployed_capital': deployed
         })
         for p in self.pairs:
             pair_name = f"{p['s1']._name}-{p['s2']._name}"
@@ -157,7 +162,7 @@ class PairTradingStrategy(bt.Strategy):
 
             # --- ENTRY LOGIC ---
             if pos2 == 0:
-                if p['order'] == 'guard_blocked':
+                if isinstance(p['order'], str) and p['order'] == 'guard_blocked':
                     if abs(z) < self.p.exit_z: p['order'] = None
                     else: continue
                 
@@ -176,11 +181,15 @@ class PairTradingStrategy(bt.Strategy):
                                     self.log(f'Earnings screen blocked {pair_name}')
                                 continue
 
-                        notional = self.broker.getvalue() * self.p.equity_fraction
-                        size2 = int(notional / p['s2'].close[0])
-                        if self.p.log_space:
+                        notional = self.p.initial_cash * self.p.equity_fraction
+                        if self.p.dollar_neutral:
+                            size1 = int(notional / p['s1'].close[0])
+                            size2 = int(notional / p['s2'].close[0])
+                        elif self.p.log_space:
+                            size2 = int(notional / p['s2'].close[0])
                             size1 = int(abs(size2 * current_hr * (p['s2'].close[0] / p['s1'].close[0])))
                         else:
+                            size2 = int(notional / p['s2'].close[0])
                             size1 = int(abs(size2 * current_hr))
                         
                         if size1 <= 0 or size2 <= 0:
@@ -202,26 +211,43 @@ class PairTradingStrategy(bt.Strategy):
                             if current_hr >= 0: self.buy(p['s1'], size=size1)
                             else: self.sell(p['s1'], size=size1)
 
-                            self.trade_count += 1
-                            self.active_trades[pair_name] = {
-                                'entry_date': self.datas[0].datetime.date(0),
-                                'p1_entry': p['s1'].close[0], 'p2_entry': p['s2'].close[0],
-                                'hr_entry': current_hr, 'intercept_entry': p['intercept'][0],
-                                'mu_entry': p['rolling_mean'][0], 'sigma_entry': p['rolling_std'][0],
-                                'target_notional': notional
-                            }
+                        self.trade_count += 1
+                        self.active_trades[pair_name] = {
+                            'entry_date': self.datas[0].datetime.date(0),
+                            'p1_entry': p['s1'].close[0], 'p2_entry': p['s2'].close[0],
+                            'hr_entry': current_hr, 'intercept_entry': p['intercept'][0],
+                            'mu_entry': p['rolling_mean'][0], 'sigma_entry': p['rolling_std'][0],
+                            'target_notional': notional
+                        }
+
+        # --- DAILY MARKS (mark-to-market per open trade, end of day) ---
+        if self.active_trades:
+            pair_by_name = {f"{p['s1']._name}-{p['s2']._name}": p for p in self.pairs}
+            for pair_name, info in self.active_trades.items():
+                p = pair_by_name.get(pair_name)
+                if p is None:
+                    continue
+                self.trade_marks.append({
+                    'date': self.datas[0].datetime.date(0),
+                    'pair': pair_name,
+                    'mark_pnl': self._current_pnl(p, info),
+                    'target_notional': info['target_notional']
+                })
+
+    def _current_pnl(self, p, info):
+        p1_curr, p2_curr = p['s1'].close[0], p['s2'].close[0]
+        pnl2 = self.getposition(p['s2']).size * (p2_curr - info['p2_entry'])
+        pnl1 = self.getposition(p['s1']).size * (p1_curr - info['p1_entry'])
+        return pnl1 + pnl2
 
     def record_exit(self, p, reason):
         pair_name = f"{p['s1']._name}-{p['s2']._name}"
         if pair_name in self.active_trades:
             info = self.active_trades.pop(pair_name)
-            p1_exit, p2_exit = p['s1'].close[0], p['s2'].close[0]
-            
+
             # Simple PnL logging
-            pnl2 = self.getposition(p['s2']).size * (p2_exit - info['p2_entry'])
-            pnl1 = self.getposition(p['s1']).size * (p1_exit - info['p1_entry'])
-            trade_pnl = pnl1 + pnl2
-            
+            trade_pnl = self._current_pnl(p, info)
+
             self.trade_logs.append({
                 'pair': pair_name,
                 'entry_date': info['entry_date'],
@@ -250,7 +276,29 @@ def prepare_backtest_data(s1: pd.Series, s2: pd.Series,
     When fixed_params is provided (dict with 'hedge_ratio', 'intercept', 
     'mu', 'sigma'), uses formation-period fixed parameters for Z-score 
     calculation instead of rolling estimates.
+
+    Only the rows needed to compute signals inside the test window are used:
+    the input series are sliced to ``[test_start - warmup : test_end]`` before
+    the rolling regression, where ``warmup`` covers the residual lookback plus
+    the z-score lookback (with a calendar-day buffer). This keeps the rolling
+    OLS from scanning the full history on every fold (a large speedup) without
+    changing the resulting test-window signals.
     """
+    if test_start is not None:
+        ts = pd.to_datetime(test_start)
+        te = pd.to_datetime(test_end) if test_end is not None else None
+        # Trading days needed before test_start: resid_lb + z_lb. Convert to
+        # calendar days with a ~1.5x buffer (weekends/holidays) plus margin.
+        need_rows = resid_lb + z_lb
+        cal_buffer = int(need_rows * 1.5) + 30
+        warm_start = ts - pd.Timedelta(days=cal_buffer)
+        if te is not None:
+            s1 = s1.loc[warm_start:te]
+            s2 = s2.loc[warm_start:te]
+        else:
+            s1 = s1.loc[warm_start:]
+            s2 = s2.loc[warm_start:]
+
     if fixed_params is not None:
         hr = fixed_params['hedge_ratio']
         intercept = fixed_params['intercept']

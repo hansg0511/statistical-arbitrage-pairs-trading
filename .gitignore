@@ -8,3 +8,10 @@ results_default*/
 results_max10*/
 research/cache/
 research/diagnostics/
+Output/
+diagnosis/
+fixed_diagnosis/
+archive/
+research/archive/
+*.log
+*.log.err

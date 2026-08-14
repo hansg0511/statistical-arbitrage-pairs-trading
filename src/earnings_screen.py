@@ -37,15 +37,15 @@ class EarningsScreen:
                 t = yf.Ticker(ticker)
                 dates = t.earnings_dates
                 if dates is None or dates.empty:
+                    self._earnings[ticker] = set()
                     continue
                 # Filter to Earnings events only and normalize to dates
                 if 'Event Type' in dates.columns:
                     dates = dates[dates['Event Type'] == 'Earnings']
                 earnings_dates = {d.date() for d in dates.index if start_dt.date() <= d.date() <= end_dt.date()}
-                if earnings_dates:
-                    self._earnings[ticker] = earnings_dates
+                self._earnings[ticker] = earnings_dates
             except Exception:
-                pass
+                self._earnings[ticker] = set()
 
     def has_earnings_in_window(self, ticker, entry_date, max_holding_days=15, block_days_after=0):
         entry = pd.to_datetime(entry_date).date()

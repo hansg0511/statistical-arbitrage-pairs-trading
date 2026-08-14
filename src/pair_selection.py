@@ -18,7 +18,7 @@ class PairSelector:
     def analyze_pair(stock1: pd.Series, stock2: pd.Series) -> Dict[str, float]:
         """
         Perform a comprehensive cointegration analysis on a pair of stocks.
-        Returns metrics for both raw and log-price spaces.
+        Returns metrics for raw, log-price, and normalized-price spaces.
         """
         combined = pd.concat([stock1, stock2], axis=1).dropna()
         if len(combined) < 20:
@@ -34,7 +34,14 @@ class PairSelector:
                 'half_life_log': np.nan,
                 'hedge_ratio_log': np.nan,
                 'phi_log': np.nan,
-                'sigma_eq_log': np.nan
+                'sigma_eq_log': np.nan,
+                'cointegration_pvalue_norm': 1.0,
+                'correlation_norm': 0.0,
+                'half_life_norm': np.nan,
+                'hedge_ratio_norm': np.nan,
+                'intercept_norm': np.nan,
+                'phi_norm': np.nan,
+                'sigma_eq_norm': np.nan,
             }
         
         s1, s2 = combined.iloc[:, 0], combined.iloc[:, 1]
@@ -51,6 +58,14 @@ class PairSelector:
         correlation_log = s1_log.corr(s2_log)
         model_log = sm.OLS(s2_log, sm.add_constant(s1_log)).fit()
         ar1_res_log = estimate_ar1(model_log.resid)
+
+        # --- NORMALIZED PRICE SPACE ANALYSIS ---
+        s1_norm = s1 / s1.iloc[0]
+        s2_norm = s2 / s2.iloc[0]
+        _, pvalue_norm, _ = coint(s1_norm, s2_norm)
+        correlation_norm = s1_norm.corr(s2_norm)
+        model_norm = sm.OLS(s2_norm, sm.add_constant(s1_norm)).fit()
+        ar1_res_norm = estimate_ar1(model_norm.resid)
     
         return {
             'cointegration_pvalue': pvalue,
@@ -66,16 +81,24 @@ class PairSelector:
             'hedge_ratio_log': model_log.params[1],
             'intercept_log': model_log.params[0],
             'phi_log': ar1_res_log['phi'],
-            'sigma_eq_log': ar1_res_log['sigma_eq']
+            'sigma_eq_log': ar1_res_log['sigma_eq'],
+            'cointegration_pvalue_norm': pvalue_norm,
+            'correlation_norm': correlation_norm,
+            'half_life_norm': ar1_res_norm['half_life'],
+            'hedge_ratio_norm': model_norm.params[1],
+            'intercept_norm': model_norm.params[0],
+            'phi_norm': ar1_res_norm['phi'],
+            'sigma_eq_norm': ar1_res_norm['sigma_eq'],
         }
         
-    def select_pairs(self, master_df: pd.DataFrame, sector_map: Dict[str, List[str]], start: str, end: str, same_sector_only: bool = True, return_divergence_threshold: Optional[float] = None) -> pd.DataFrame:
+    def select_pairs(self, master_df: pd.DataFrame, sector_map: Dict[str, List[str]], start: str, end: str, same_sector_only: bool = True, return_divergence_threshold: Optional[float] = None, log_space: bool = False) -> pd.DataFrame:
         """
         Analyze pairs and return cointegrated pairs.
         When same_sector_only=True, restricts pairs to within the same sector.
         When same_sector_only=False, considers all possible pairs across all sectors.
         When return_divergence_threshold is set, skips pairs whose cumulative stock returns
         over the selection window differ by more than the threshold.
+        When log_space=True, uses log-space half_life for the half-life filter.
 
         Populates self._stats dict after each call:
             total_combinations, divergence_skipped, coint_tested, coint_passed
@@ -134,8 +157,9 @@ class PairSelector:
             
             if sector_results:
                 sector_df = pd.DataFrame(sector_results)
-                # 1. Apply Analysis.py legacy filter (Raw P < 0.05 and Raw Half-Life > 0)
-                mask = (sector_df['cointegration_pvalue'] < self.pvalue_threshold) & (sector_df['half_life'] > 0)
+                # 1. Apply filter (Half-Life > 0, using correct space)
+                hl_col = 'half_life_log' if log_space else 'half_life'
+                mask = sector_df[hl_col] > 0
                 filtered_sector = sector_df[mask].sort_values('cointegration_pvalue', ascending=True)
                 all_results.append(filtered_sector)
         
