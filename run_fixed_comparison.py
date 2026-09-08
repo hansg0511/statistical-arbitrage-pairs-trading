@@ -5,6 +5,7 @@ are single-start (apples-to-apples with the old single-start pipeline cells).
 Recent sections (05/06/07/10/10a/10b) are 5-start (10 = 8-start) means.
 """
 import glob, os, json, statistics
+from src.result_validation import validate_run_output
 
 BASE = 'fixed_diagnosis'
 CFGS = ['same_sector_slide3m_noscreen', 'same_sector_slide3m_bd7',
@@ -16,6 +17,11 @@ CFGS = ['same_sector_slide3m_noscreen', 'same_sector_slide3m_bd7',
 def stats(section, cfg):
     v = []
     for f in glob.glob(os.path.join(BASE, section, '*_%s/metrics.json' % cfg)):
+        run_dir = os.path.dirname(f)
+        validation = validate_run_output(run_dir)
+        if not validation['valid']:
+            details = '; '.join(validation['reasons'])
+            raise RuntimeError(f'invalid run output {run_dir}: {details}')
         m = json.load(open(f))
         v.append((m['annualized_sharpe'], m['annualized_return'] * 100))
     if not v:
@@ -138,19 +144,25 @@ matrix_block('12-month selection', OLD_12M, SECTIONS_12M, HDR_12M, CONV_12M)
 
 # ---- Tier 4: key takeaways ----
 L.append('## 3. What changed / key takeaways\n')
+best_09a = best_of('09a')
 L.append('- **SP500 2m historical flipped positive** (old: all 8 configs negative −0.01…−0.47; '
-         'new single-start best cross 3m noscreen %.2f). Dropping 2020 + aligned windows changed '
-         'the verdict on this cell.\n' % (best_of('09a')[1] if best_of('09a') else 0))
+         'new single-start best `%s` %.2f). Dropping 2020 + aligned windows changed '
+         'the verdict on this cell.\n' % (best_09a[0], best_09a[1]))
 L.append('- **SP500 12m historical best collapsed** (old single-start `same 3m noscreen` 1.56 → '
          'new single-start best `%s` %.2f). The 1.56 was largely a 2016-2020 window effect.\n'
          % (best_of('09b')[0], best_of('09b')[1]))
 L.append('- **Core 12m historical** best `%s` %.2f vs old 0.53. Core 12m remains the thin-book '
          'caveat (few same-sector pairs).\n' % (best_of('08b')[0], best_of('08b')[1]))
-L.append('- **Recent cells are stable:** core 2m `same 1m bd7` 1.28 → 1.30; SP500 2m `same 3m bd7` '
-         '0.42 → %.2f; core 12m `same 1m bd7` 0.97 → 0.37 (best now `%s` %.2f); SP500 12m '
-         '`same 1m bd7` 1.64 → 1.48 (best now `%s` %.2f).\n'
-         % (best_of('07')[1], best_of('10a')[0], best_of('10a')[1],
-            best_of('10b')[0], best_of('10b')[1]))
+best_07 = best_of('07')
+best_10a = best_of('10a')
+best_10b = best_of('10b')
+L.append('- **Recent cells are not uniformly stable:** core 2m `same 1m bd7` 1.28 → %.2f; SP500 2m '
+         '`same 3m bd7` 0.42 → %.2f (best now `%s` %.2f); core 12m `same 1m bd7` 0.97 → %.2f '
+         '(best now `%s` %.2f); SP500 12m `same 1m bd7` 1.64 → %.2f (best now `%s` %.2f).\n'
+         % (stats('06', 'same_sector_slide1m_bd7')[0],
+            stats('07', 'same_sector_slide3m_bd7')[0], best_07[0], best_07[1],
+            stats('10a', 'same_sector_slide1m_bd7')[0], best_10a[0], best_10a[1],
+            stats('10b', 'same_sector_slide1m_bd7')[0], best_10b[0], best_10b[1]))
 L.append('- **Consistent rule:** SP500 needs 12m selection; core 2m ≥ core 12m on recent. '
          'The universe × selection interaction in RESEARCH_PIPELINE.md still holds under aligned windows.\n')
 

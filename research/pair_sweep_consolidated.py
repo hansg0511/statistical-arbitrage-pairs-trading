@@ -32,6 +32,7 @@ from research.run_combined_backtest import (  # noqa: E402
 BASE = 'fixed_diagnosis'
 SWEEP_ROOT = '_sweep_pct25'
 OUT = os.path.join(BASE, '_combined', 'consolidated_sweep')
+SEPARATE = os.path.join(BASE, 'separate')
 
 CFGS = ['same_sector_slide3m_noscreen', 'same_sector_slide3m_bd7',
         'same_sector_slide1m_noscreen', 'same_sector_slide1m_bd7',
@@ -104,6 +105,57 @@ def write_winner_csv(sa, ca, sb, cb, window, mech, pct, label):
                    'mechanism': mech, 'pct': pct}, f, indent=2)
 
 
+def dense_ranks(values, reverse=True):
+    order = sorted(range(len(values)), key=values.__getitem__, reverse=reverse)
+    ranks = [0] * len(values)
+    rank = 0
+    prev = None
+    for i, idx in enumerate(order):
+        v = values[idx]
+        if prev is None or abs(prev - v) > 1e-12:
+            rank = i + 1
+            prev = v
+        ranks[idx] = rank
+    return ranks
+
+
+def add_rank_avg(results):
+    """Rank each pair by recent Sharpe and by hist Sharpe, then average the two ranks."""
+    recent = [r['recent'] for r in results]
+    hist = [r['hist'] for r in results]
+    r_rank = dense_ranks(recent)
+    h_rank = dense_ranks(hist)
+    for i, r in enumerate(results):
+        r['r_rank'] = r_rank[i]
+        r['h_rank'] = h_rank[i]
+        r['rank_avg'] = (r_rank[i] + h_rank[i]) / 2.0
+    results.sort(key=lambda x: x['rank_avg'])
+    return results
+
+
+def leg_rec_sh_map():
+    """Per-leg mean recent Sharpe over the 5 aligned start-pairs (from metrics.json)."""
+    import statistics
+    root = os.path.join(BASE, SWEEP_ROOT)
+    out = {}
+    for strat, (rsec, _hsec, starts) in STRATEGIES.items():
+        for cfg in CFGS:
+            shs = []
+            for st in starts:
+                with open(os.path.join(root, rsec, f'{st}_{cfg}', 'metrics.json'),
+                          encoding='utf-8') as f:
+                    shs.append(json.load(f)['annualized_sharpe'])
+            out['%s/%s' % (strat, cfg)] = statistics.mean(shs)
+    return out
+
+
+def reorder_legs(rows, rec_sh_map):
+    """Swap A/B in each row so leg A is always the recent-strong leg."""
+    for r in rows:
+        if rec_sh_map[r['B']] > rec_sh_map[r['A']]:
+            r['A'], r['B'] = r['B'], r['A']
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mechanism', default='both', choices=['A', 'B', 'both'])
@@ -120,6 +172,8 @@ def main():
     report.append('Mechanisms A (monthly re-base) and B (entry-flow), pct=%.3f. '
                   'Recent = mean Sharpe over the 5 aligned start-pairs; hist = single aligned '
                   'window; score = min(recent, hist).\n' % args.pct)
+
+    rec_sh_map = leg_rec_sh_map()
 
     for mech in mechanisms:
         results = []
@@ -151,6 +205,27 @@ def main():
                              r['score'], r['r_ret'] * 100, r['h_ret'] * 100))
         report.append('')
 
+        rank_rows = add_rank_avg([dict(r) for r in results])
+        reorder_legs(rank_rows, rec_sh_map)
+        print(f"=== Mechanism {mech} | top {args.top} by rank-average (rec-rank + hist-rank) ===")
+        for r in rank_rows[:args.top]:
+            print('%-62s | rec#%3d | hist#%3d | avg %.1f | rec %.2f | hist %.2f'
+                  % (r['A'] + '  +  ' + r['B'], r['r_rank'], r['h_rank'], r['rank_avg'],
+                     r['recent'], r['hist']))
+        print()
+
+        report.append(f'## Mechanism {mech} — top 20 pairs by rank-average\n')
+        report.append('Ranked by the mean of each pair\\\'s recent-rank and hist-rank (lower = '
+                      'better). For each pair, rank against all 496 pairs by recent Sharpe and by '
+                      'hist Sharpe, then average the two ranks. **Leg A = recent-strong.**\n')
+        report.append('| Pair | Rec Rank | Hist Rank | RankAvg | Recent | Hist | Score |')
+        report.append('|---|---:|---:|---:|---:|---:|---:|')
+        for r in rank_rows[:20]:
+            report.append('| %s + %s | %d | %d | %.1f | %.2f | %.2f | %.2f |'
+                          % (r['A'], r['B'], r['r_rank'], r['h_rank'], r['rank_avg'],
+                             r['recent'], r['hist'], r['score']))
+        report.append('')
+
         if args.report:
             winners = results[:5]
             report.append(f'## Mechanism {mech} — winners (daily_returns.csv written)\n')
@@ -166,7 +241,7 @@ def main():
                                  r['hist'], r['h_ret'] * 100, label))
             report.append('')
 
-    out_path = os.path.join(BASE, '_COMBINED_BOOK_CONSOLIDATED.md')
+    out_path = os.path.join(SEPARATE, '_COMBINED_BOOK_CONSOLIDATED.md')
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(report) + '\n')
     print('wrote', out_path)

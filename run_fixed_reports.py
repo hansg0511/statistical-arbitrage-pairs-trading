@@ -10,6 +10,7 @@ Usage: python run_fixed_reports.py [--section 08b]
 import glob, os, json, statistics, argparse
 import pandas as pd
 import numpy as np
+from src.result_validation import validate_run_output
 
 BASE = 'fixed_diagnosis'
 SECTIONS = ['05', '06', '07', '08a', '08b', '09a', '09b', '10', '10a', '10b']
@@ -37,6 +38,10 @@ CONFIG_ORDER = [
 
 def load_run(section, sd, label):
     d = os.path.join(BASE, section, f'{sd}_{label}')
+    validation = validate_run_output(d)
+    if not validation['valid']:
+        details = '; '.join(validation['reasons'])
+        raise RuntimeError(f'invalid run output {d}: {details}')
     mp = os.path.join(d, 'metrics.json')
     if not os.path.exists(mp):
         return None

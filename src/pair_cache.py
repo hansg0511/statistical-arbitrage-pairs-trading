@@ -7,6 +7,25 @@ from typing import Dict, Tuple, Optional, List, Set
 CacheKey = Tuple[str, str, str, bool]
 FilteredCacheKey = Tuple[str, str, str, bool, float]
 
+
+def filter_pairs_by_half_life(df: Optional[pd.DataFrame], log_space: bool = True) -> pd.DataFrame:
+    """Keep only pairs with a finite, positive half-life in the active space."""
+    if df is None:
+        return pd.DataFrame()
+    if df.empty:
+        return df.copy()
+
+    column = 'half_life_log' if log_space else 'half_life'
+    if column not in df.columns:
+        return df.iloc[0:0].copy()
+
+    values = pd.to_numeric(df[column], errors='coerce')
+    mask = values.notna()
+    mask &= np.isfinite(values.to_numpy(dtype=float))
+    mask &= values > 0
+    return df.loc[mask].copy()
+
+
 class PairSelectionCache:
     """
     Caches pair selection results.
@@ -59,10 +78,10 @@ class PairSelectionCache:
     def set(self, key: CacheKey, df: pd.DataFrame):
         self._data[key] = df.copy()
 
-    def get_filtered(self, key: FilteredCacheKey) -> Optional[pd.DataFrame]:
+    def get_filtered(self, key: FilteredCacheKey, log_space: bool = True) -> Optional[pd.DataFrame]:
         df = self._filtered.get(key)
         if df is not None:
-            return df.copy()
+            return filter_pairs_by_half_life(df, log_space=log_space)
         return None
 
     def set_filtered(self, key: FilteredCacheKey, df: pd.DataFrame):
@@ -146,21 +165,15 @@ class PoolCache:
         if df.empty:
             return df
 
-        # Reproduce the seeding filter (PairSelector.select_pairs): significance
-        # is always applied in log space, while the half-life filter uses the raw
-        # half_life column. This is idempotent on pre-filtered core pools and
-        # correctly prunes the unfiltered sp500 superset pools. Filtering on
-        # half_life_log would wrongly drop rows whose raw half_life is valid but
-        # whose log-space half-life is NaN (e.g. MDLZ-MO in 2015-02).
-        #
-        # Pre-filtered pools (core_2m) are a verbatim copy of the already-filtered
-        # cache, so skipping the pvalue/half-life filter here preserves rows the
-        # cache kept with NaN raw half_life (e.g. GE-MS in 2024-05-15).
+        # Reproduce the seeding significance filter for unfiltered pools. The
+        # half-life validity check must always use the price space consumed by
+        # the backtest, including for pre-filtered core pools.
         if not self.prefiltered:
             pcol = 'cointegration_pvalue_log' if 'cointegration_pvalue_log' in df.columns else 'cointegration_pvalue'
-            hlcol = 'half_life' if 'half_life' in df.columns else 'half_life_log'
-            if pcol in df.columns and hlcol in df.columns:
-                df = df[(df[pcol] < pvalue) & (df[hlcol] > 0)]
+            if pcol in df.columns:
+                df = df[df[pcol] < pvalue]
+
+        df = filter_pairs_by_half_life(df, log_space=log_space)
 
         if return_divergence is not None and not df.empty:
             # Divergence requires live price data; the caller applies it

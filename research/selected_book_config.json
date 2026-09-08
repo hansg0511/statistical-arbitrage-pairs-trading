@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "status": "locked",
+  "locked_on": "2026-09-08",
+  "name": "clean40_selected_book",
+  "pair": {
+    "leg_a": {
+      "role": "recent_strong",
+      "strategy": "sp500-12m",
+      "config": "cross_sector_slide1m_noscreen",
+      "path": "sp500-12m/cross_sector_slide1m_noscreen"
+    },
+    "leg_b": {
+      "role": "historical_strong",
+      "strategy": "sp500-2m",
+      "config": "cross_sector_slide3m_bd7",
+      "path": "sp500-2m/cross_sector_slide3m_bd7"
+    }
+  },
+  "momentum": {
+    "lookback_days": 84,
+    "step": 0.4,
+    "weight_bounds": {
+      "min": 0.1,
+      "max": 0.9
+    },
+    "initial_weight_leg_a": 0.5
+  },
+  "book": {
+    "initial_capital": 1000000.0,
+    "pct_per_pair": 0.25
+  },
+  "selection_evidence": {
+    "pair_universe": 496,
+    "ranking_methods": [
+      "separate_score",
+      "rank_average",
+      "joined_sharpe"
+    ],
+    "mechanisms": [
+      "A",
+      "B"
+    ],
+    "ranks": {
+      "A": {
+        "separate_score": 1,
+        "rank_average": 1,
+        "joined_sharpe": 1
+      },
+      "B": {
+        "separate_score": 1,
+        "rank_average": 1,
+        "joined_sharpe": 1
+      }
+    }
+  },
+  "execution_assumptions": {
+    "status": "open_for_realistic_capacity_validation",
+    "broker_leverage": null,
+    "margin_behavior": null,
+    "margin_long": null,
+    "margin_short": null,
+    "borrow_costs": null,
+    "slippage": null,
+    "transaction_costs": null
+  },
+  "provenance": {
+    "active_report": "RESEARCH_PIPELINE_FIXED.md",
+    "ranking_report": "fixed_diagnosis/clean40/_CLEAN40_PAIR_RANKS.md",
+    "analysis_report": "fixed_diagnosis/clean40/_HUMAN_ANALYSIS.md"
+  }
+}

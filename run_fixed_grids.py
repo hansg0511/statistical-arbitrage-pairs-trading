@@ -21,11 +21,23 @@ Usage: python run_fixed_grids.py [--only 08b] [--skip 10b] [--workers N]
 """
 import subprocess, json, os, sys, threading, argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.result_validation import validate_run_output
 
 EARNINGS_CORE = 'research/earnings_cache/earnings_dates.pkl'
-EARNINGS_SP500 = 'research/earnings_cache/earnings_dates_sp500.pkl'
+EARNINGS_SP500 = EARNINGS_CORE
 CACHE_DIR = 'research/cache'
 BASE = 'fixed_diagnosis'
+
+
+def snapshot_path(snapshot_dir, cfg):
+    if not snapshot_dir:
+        return None
+    period = 'historical' if cfg['end'] == '2020-01-01' else 'recent'
+    selection_suffix = '_12m' if cfg['sel'] == 12 else ''
+    return os.path.join(
+        snapshot_dir, f"{cfg['universe']}_{period}{selection_suffix}.pkl"
+    )
+
 
 def _grid(earnings):
     e = ['--earnings_screen', '--earnings_block_days', '7', '--earnings_cache', earnings]
@@ -80,7 +92,7 @@ results = []
 lock = threading.Lock()
 
 
-def run_job(section, sd, label, extra_args):
+def run_job(section, sd, label, extra_args, price_snapshot=None, broker_leverage=1.0):
     cfg = SECTIONS[section]
     out_dir = os.path.join(BASE, section, f'{sd}_{label}')
     os.makedirs(out_dir, exist_ok=True)
@@ -94,10 +106,11 @@ def run_job(section, sd, label, extra_args):
         '--no-earnings_screen',
         '--max_pairs', str(cfg['max_pairs']),
         '--pct_per_pair', str(cfg['pct']),
+        '--broker_leverage', str(broker_leverage),
         '--cache_dir', CACHE_DIR,
         '--sel_months', str(cfg['sel']),
         '--workers', '1',
-    ] + list(extra_args)
+    ] + (['--price_snapshot', price_snapshot] if price_snapshot else []) + list(extra_args)
     print(f"\n[START] sec{section} {sd} {label}", flush=True)
     print('CMD: ' + ' '.join(cmd), flush=True)
     try:
@@ -105,6 +118,21 @@ def run_job(section, sd, label, extra_args):
     except Exception as e:
         print(f"  [FAIL] {sd} {label}: {e}", flush=True)
         return
+    with open(os.path.join(out_dir, 'run.log'), 'w') as f:
+        f.write(result.stdout or '')
+        if result.stderr:
+            f.write('\n--- STDERR ---\n'); f.write(result.stderr)
+
+    if result.returncode != 0:
+        print(f"  [FAIL] sec{section} {sd} {label}: subprocess exit {result.returncode}", flush=True)
+        return
+
+    validation = validate_run_output(out_dir)
+    if not validation['valid']:
+        details = '; '.join(validation['reasons'])
+        print(f"  [FAIL] sec{section} {sd} {label}: {details}", flush=True)
+        return
+
     metrics_path = os.path.join(out_dir, 'metrics.json')
     if os.path.exists(metrics_path):
         with open(metrics_path) as f:
@@ -119,10 +147,6 @@ def run_job(section, sd, label, extra_args):
         print(f"  [DONE] sec{section} {sd} {label}: Sharpe={rec['sharpe']} Ret={rec['return_pct']}%", flush=True)
     else:
         print(f"  [FAIL] sec{section} {sd} {label}: no metrics.json", flush=True)
-    with open(os.path.join(out_dir, 'run.log'), 'w') as f:
-        f.write(result.stdout or '')
-        if result.stderr:
-            f.write('\n--- STDERR ---\n'); f.write(result.stderr)
 
 
 def main():
@@ -130,6 +154,14 @@ def main():
     parser.add_argument('--only', type=str, default=None, help='run one section only')
     parser.add_argument('--skip', type=str, nargs='*', default=[], help='skip sections')
     parser.add_argument('--workers', type=int, default=2)
+    parser.add_argument('--force', action='store_true',
+                        help='Re-run every job even if metrics.json already exists.')
+    parser.add_argument('--pause', type=float, default=0.0,
+                        help='Seconds to sleep between job completions (rate-limit cushion).')
+    parser.add_argument('--snapshot-dir', type=str, default=None,
+                        help='Directory containing scoped price snapshots.')
+    parser.add_argument('--broker-leverage', type=float, default=1.0,
+                        help='Broker leverage for every launched run.')
     args = parser.parse_args()
 
     order = [s for s in RUN_ORDER if s not in args.skip]
@@ -142,8 +174,14 @@ def main():
         for sd in cfg['starts']:
             for label, extra in cfg['grid']:
                 out_dir = os.path.join(BASE, section, f'{sd}_{label}')
-                if not os.path.exists(os.path.join(out_dir, 'metrics.json')):
-                    jobs.append((section, sd, label, extra))
+                needs_run = args.force or not os.path.exists(os.path.join(out_dir, 'metrics.json'))
+                if not needs_run and not validate_run_output(out_dir)['valid']:
+                    needs_run = True
+                if needs_run:
+                    price_snapshot = snapshot_path(args.snapshot_dir, cfg)
+                    if price_snapshot and not os.path.isfile(price_snapshot):
+                        parser.error(f'price snapshot does not exist: {price_snapshot}')
+                    jobs.append((section, sd, label, extra, price_snapshot, args.broker_leverage))
 
     total = sum(len(SECTIONS[s]['starts']) * len(SECTIONS[s]['grid']) for s in order)
     print(f"Sections: {order}")
@@ -151,8 +189,9 @@ def main():
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {executor.submit(run_job, *j): j for j in jobs}
-        for _ in as_completed(futures):
-            pass
+        for i, _ in enumerate(as_completed(futures)):
+            if args.pause and i < len(jobs) - 1:
+                import time as _t; _t.sleep(args.pause)
 
     if results:
         out = os.path.join(BASE, '_run_log.txt')

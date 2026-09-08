@@ -39,12 +39,47 @@ class PairTradingStrategy(bt.Strategy):
         ('verbose', False),
         ('earnings_screen', None),
         ('earnings_block_days', 0),
+        ('margin_behavior', 'off'),  # off | report | reject (off = no margin, unchanged behavior)
+        ('margin_long', 0.50),
+        ('margin_short', 0.50),
+        ('maintenance_long', 0.25),
+        ('maintenance_short', 0.30),
+        ('margin_rates', {}),  # per-ticker overrides {TICKER: {'long': x, 'short': y}}
     )
 
     def log(self, txt, dt=None):
         if self.p.verbose:
             dt = dt or self.datas[0].datetime.date(0)
             print(f'{dt.isoformat()}, {txt}')
+
+    def margin_rate(self, ticker, side):
+        """Initial margin rate for a ticker/side: per-ticker override else global."""
+        override = self.p.margin_rates.get(ticker)
+        if isinstance(override, dict) and side in override:
+            return float(override[side])
+        if isinstance(override, (int, float)):
+            return float(override)
+        return float(getattr(self.p, f'margin_{side}'))
+
+    def _position_book(self):
+        """Long/short market values per ticker from live broker positions at close[0]."""
+        long_book, short_book = {}, {}
+        for data in self.datas:
+            pos = self.getposition(data).size
+            if pos == 0:
+                continue
+            value = abs(pos) * data.close[0]
+            book = long_book if pos > 0 else short_book
+            book[data._name] = book.get(data._name, 0.0) + value
+        return long_book, short_book
+
+    def _required_margin(self, long_book, short_book):
+        return (sum(self.margin_rate(t, 'long') * v for t, v in long_book.items())
+                + sum(self.margin_rate(t, 'short') * v for t, v in short_book.items()))
+
+    def _maintenance_margin(self, long_book, short_book):
+        return (self.p.maintenance_long * sum(long_book.values())
+                + self.p.maintenance_short * sum(short_book.values()))
 
     def __init__(self):
         self.pairs = []
@@ -68,31 +103,98 @@ class PairTradingStrategy(bt.Strategy):
         self.daily_active_counts = []
         self.rejected_orders = []
         self.trade_marks = []
+        self.daily_margin = []
+        self.signal_log = []
+        self.entry_order_refs = set()
 
     def notify_order(self, order):
         """Track and reset order objects to prevent redundant entry attempts."""
         if order.status in [order.Submitted, order.Accepted]:
             return
-        
-        for p in self.pairs:
-            if order.data in [p['s1'], p['s2']]:
-                pair_name = f"{p['s1']._name}-{p['s2']._name}"
-                if order.status == order.Rejected:
+
+        # Identify the pair for this order by the *identity* of the data feed.
+        # A ticker can appear in many pairs (e.g. UNH in MO-UNH, PYPL-UNH, ...), so
+        # matching by name/equality and breaking on the first hit attributes the
+        # order to the wrong pair. Identity matching is unambiguous.
+        p = next((pp for pp in self.pairs
+                  if order.data is pp['s1'] or order.data is pp['s2']), None)
+        if p is None:
+            return
+
+        pair_name = f"{p['s1']._name}-{p['s2']._name}"
+        info = self.active_trades.get(pair_name)
+        is_entry = info is not None and 'filled_legs' in info
+
+        if order.status in [order.Rejected, order.Margin]:
+            # Only treat a rejection as a real "failed entry" if this order is one of
+            # the entry orders we submitted. A close order (self.close()) of a successful
+            # trade can also surface a Margin status; those are NOT failed entries and
+            # must not be logged to rejected_orders.csv.
+            if order.ref not in self.entry_order_refs:
+                p['order'] = None
+                return
+            reason = 'order_rejected' if order.status == order.Rejected else 'margin'
+            leg = 's1' if order.data is p['s1'] else 's2'
+            # side: the direction this leg is being opened (long for a BUY, short for a SELL)
+            side = 'long' if order.isbuy() else 'short'
+            self.rejected_orders.append({
+                'date': self.datas[0].datetime.date(0),
+                'pair': pair_name,
+                'reason': reason,
+                'cash': self.broker.getcash(),
+                'value': self.broker.getvalue(),
+                'leg': leg,
+                'ticker': order.data._name,
+                'side': side,
+                'req_size': order.size,
+                'hr_entry': info.get('hr_entry') if info is not None else None,
+                'entry_date': info.get('entry_date') if info is not None else None,
+            })
+            self.entry_order_refs.discard(order.ref)
+            # An entry leg failed to fill. Unwind any leg that already filled
+            # (avoid a naked position) and drop the entry so it never surfaces
+            # as a phantom trade.
+            if is_entry:
+                if 's1' in info['filled_legs']:
+                    self.close(p['s1'])
+                if 's2' in info['filled_legs']:
+                    self.close(p['s2'])
+                self.active_trades.pop(pair_name, None)
+        elif order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(f'BUY EXECUTED ({order.data._name}), {order.executed.price:.2f}')
+            else:
+                self.log(f'SELL EXECUTED ({order.data._name}), {order.executed.price:.2f}')
+            self.entry_order_refs.discard(order.ref)
+            if is_entry:
+                # Only count a leg as filled if the broker actually executed a
+                # non-zero size (a zero-size fill means it couldn't afford it).
+                if order.executed.size != 0:
+                    leg = 's1' if order.data is p['s1'] else 's2'
+                    info['filled_legs'].add(leg)
+                else:
+                    leg = 's1' if order.data is p['s1'] else 's2'
                     self.rejected_orders.append({
                         'date': self.datas[0].datetime.date(0),
                         'pair': pair_name,
-                        'reason': 'order_rejected',
+                        'reason': 'zero_fill',
                         'cash': self.broker.getcash(),
-                        'value': self.broker.getvalue()
+                        'value': self.broker.getvalue(),
+                        'leg': leg,
+                        'ticker': order.data._name,
+                        'side': 'long' if order.isbuy() else 'short',
+                        'req_size': order.size,
+                        'hr_entry': info.get('hr_entry'),
+                        'entry_date': info.get('entry_date'),
                     })
-                elif order.status in [order.Completed]:
-                    if order.isbuy():
-                        self.log(f'BUY EXECUTED ({order.data._name}), {order.executed.price:.2f}')
-                    else:
-                        self.log(f'SELL EXECUTED ({order.data._name}), {order.executed.price:.2f}')
-                
-                p['order'] = None # Clear state for next trade
-                break
+                    # Close/undo any already-filled leg and drop the entry.
+                    if 's1' in info['filled_legs']:
+                        self.close(p['s1'])
+                    if 's2' in info['filled_legs']:
+                        self.close(p['s2'])
+                    self.active_trades.pop(pair_name, None)
+
+        p['order'] = None  # Clear state for next trade
 
     def next(self):
         deployed = sum(info['target_notional'] for info in self.active_trades.values())
@@ -122,6 +224,23 @@ class PairTradingStrategy(bt.Strategy):
 
             anchor_hr = self.p.is_stats.get(pair_name, {}).get('hr', 0)
             current_hr = p['hedge_ratio'][0]
+
+            # --- SIGNAL LOG (diagnostic: capture the entry decision inputs) ---
+            self.signal_log.append({
+                    'date': self.datas[0].datetime.date(0),
+                    'pair': pair_name,
+                    'z': z,
+                    'entry_z': self.p.entry_z,
+                    'exit_z': self.p.exit_z,
+                    'stop_z': self.p.stop_z,
+                    'pos2': pos2,
+                    'order_state': ('guard_blocked' if p['order'] == 'guard_blocked'
+                                    else ('OPEN' if p['order'] else None)),
+                    'in_active': pair_name in self.active_trades,
+                    'in_pending': pair_name in getattr(self, 'pending_trades', {}),
+                    'hr': current_hr,
+                    'anchor_hr': anchor_hr,
+                })
 
             # --- EXIT LOGIC ---
             if pos2 != 0:
@@ -202,14 +321,45 @@ class PairTradingStrategy(bt.Strategy):
                             })
                             continue
 
+                        if self.p.margin_behavior != 'off':
+                            equity = self.broker.getvalue()
+                            long_book, short_book = self._position_book()
+                            required = self._required_margin(long_book, short_book)
+                            s1_val = size1 * p['s1'].close[0]
+                            s2_val = size2 * p['s2'].close[0]
+                            if z <= -self.p.entry_z:
+                                s2_side, s1_side = 'long', 'short' if current_hr >= 0 else 'long'
+                            else:
+                                s2_side, s1_side = 'short', 'long' if current_hr >= 0 else 'short'
+                            incremental = (self.margin_rate(p['s2']._name, s2_side) * s2_val
+                                           + self.margin_rate(p['s1']._name, s1_side) * s1_val)
+                            free_after = equity - (required + incremental)
+                            if free_after < 0:
+                                self.rejected_orders.append({
+                                    'date': self.datas[0].datetime.date(0),
+                                    'pair': pair_name,
+                                    'reason': 'margin' if self.p.margin_behavior == 'reject' else 'margin_report',
+                                    'cash': self.broker.getcash(),
+                                    'value': equity,
+                                    'required_margin': required,
+                                    'incremental_margin': incremental,
+                                    'free_margin_after': free_after,
+                                })
+                                if self.p.margin_behavior == 'reject':
+                                    continue
+
                         if z <= -self.p.entry_z:
-                            p['order'] = self.buy(p['s2'], size=size2)
-                            if current_hr >= 0: self.sell(p['s1'], size=size1)
-                            else: self.buy(p['s1'], size=size1)
+                            o2 = self.buy(p['s2'], size=size2)
+                            o1 = self.sell(p['s1'], size=size1) if current_hr >= 0 else self.buy(p['s1'], size=size1)
                         else:
-                            p['order'] = self.sell(p['s2'], size=size2)
-                            if current_hr >= 0: self.buy(p['s1'], size=size1)
-                            else: self.sell(p['s1'], size=size1)
+                            o2 = self.sell(p['s2'], size=size2)
+                            o1 = self.buy(p['s1'], size=size1) if current_hr >= 0 else self.sell(p['s1'], size=size1)
+                        p['order'] = o2
+                        # Mark both leg orders as entry orders so notify_order only
+                        # logs/act on rejections that belong to an entry attempt
+                        # (not close-orders of a successful trade).
+                        self.entry_order_refs.add(o2.ref)
+                        self.entry_order_refs.add(o1.ref)
 
                         self.trade_count += 1
                         self.active_trades[pair_name] = {
@@ -217,22 +367,44 @@ class PairTradingStrategy(bt.Strategy):
                             'p1_entry': p['s1'].close[0], 'p2_entry': p['s2'].close[0],
                             'hr_entry': current_hr, 'intercept_entry': p['intercept'][0],
                             'mu_entry': p['rolling_mean'][0], 'sigma_entry': p['rolling_std'][0],
-                            'target_notional': notional
+                            'target_notional': notional,
+                            'filled_legs': set()
                         }
 
         # --- DAILY MARKS (mark-to-market per open trade, end of day) ---
         if self.active_trades:
             pair_by_name = {f"{p['s1']._name}-{p['s2']._name}": p for p in self.pairs}
-            for pair_name, info in self.active_trades.items():
+            for pair_name in list(self.active_trades.keys()):
                 p = pair_by_name.get(pair_name)
                 if p is None:
                     continue
+                info = self.active_trades[pair_name]
                 self.trade_marks.append({
                     'date': self.datas[0].datetime.date(0),
                     'pair': pair_name,
                     'mark_pnl': self._current_pnl(p, info),
                     'target_notional': info['target_notional']
                 })
+
+        # --- DAILY MARGIN (end-of-day, same convention/lag as trade_marks) ---
+        if self.p.margin_behavior != 'off':
+            long_book, short_book = self._position_book()
+            equity = self.broker.getvalue()
+            required = self._required_margin(long_book, short_book)
+            maintenance = self._maintenance_margin(long_book, short_book)
+            self.daily_margin.append({
+                'date': self.datas[0].datetime.date(0),
+                'equity': equity,
+                'cash': self.broker.getcash(),
+                'gross_long': sum(long_book.values()),
+                'gross_short': sum(short_book.values()),
+                'required_margin': required,
+                'maintenance_margin': maintenance,
+                'free_margin': equity - required,
+                'utilization': required / equity if equity > 0 else 0.0,
+                'margin_call_distance': equity - maintenance,
+                'margin_call': bool(equity < maintenance),
+            })
 
     def _current_pnl(self, p, info):
         p1_curr, p2_curr = p['s1'].close[0], p['s2'].close[0]
@@ -261,7 +433,15 @@ class PairTradingStrategy(bt.Strategy):
         """Force close any open trades at the end of the session."""
         for pair_name in list(self.active_trades.keys()):
             p = next((x for x in self.pairs if f"{x['s1']._name}-{x['s2']._name}" == pair_name), None)
-            if p: self.record_exit(p, 'session_end')
+            if p:
+                info = self.active_trades[pair_name]
+                # Do not record a session_end trade for a pair that holds no position
+                # or whose entry never fully filled (e.g. entered on the last bar).
+                if (self.getposition(p['s1']).size == 0 and self.getposition(p['s2']).size == 0
+                        or len(info.get('filled_legs', ())) < 2):
+                    self.active_trades.pop(pair_name, None)
+                    continue
+                self.record_exit(p, 'session_end')
 
 def prepare_backtest_data(s1: pd.Series, s2: pd.Series, 
                           resid_lb: int, z_lb: int, 

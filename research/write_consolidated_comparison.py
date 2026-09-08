@@ -7,18 +7,19 @@ import pandas as pd
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
-from research.run_combined_backtest import metrics, LEGS, PCT25
+from research.run_combined_backtest import metrics, LEGS
 
 BASE = 'fixed_diagnosis'
 CONS = os.path.join(BASE, '_combined', 'consolidated')
 SWEEP = os.path.join(BASE, '_combined', 'sweep_pct25')
 
 WINDOWS = ['recent', 'historical']
-LABEL_LEG = {'A': 'core-2m cross3m bd7', 'B': 'sp500-12m cross1m noscreen'}
+LABEL_LEG = {'A': 'sp500-12m cross1m noscreen', 'B': 'sp500-2m cross3m bd7'}
 
 
 def csv_metrics(rel):
-    df = pd.read_csv(os.path.join(BASE, rel), parse_dates=['date'])
+    path = rel if os.path.isabs(rel) or rel.startswith(BASE + os.sep) else os.path.join(BASE, rel)
+    df = pd.read_csv(path, parse_dates=['date'])
     return metrics(df['daily_return'].dropna())
 
 
@@ -35,6 +36,12 @@ def validate(cons_dir):
     return total_pnl, final, err
 
 
+def consolidated_metrics(window, mechanism):
+    path = os.path.join(CONS, window, mechanism, 'daily_returns.csv')
+    df = pd.read_csv(path)
+    return metrics(df['daily_return'].dropna())
+
+
 def main():
     lines = []
     lines.append('# Consolidated combined book: mechanisms A & B\n')
@@ -49,8 +56,9 @@ def main():
                  '(trailing 63d Sharpe, +/-10% step, clamp 25-75%) sets the leg capital split.\n')
     lines.append('**Mechanism A** - monthly re-base of fold capital to `w_L * C / n_active`; new entries '
                  'sized `0.25 * basis`. Weight re-applied monthly (approximates the CSV momentum book).\n')
-    lines.append('**Mechanism B** - fold basis locked at fold start (`C / n_active`, equal slice); each '
-                 'entry sized `0.25 * w_L(entry month) * basis`; no monthly re-tilt, the leg split drifts.\n')
+    lines.append('**Mechanism B** - fold basis locked at fold start (`C / n_active_L`, equal slice of '
+                 'that leg); each entry sized `0.25 * w_L(entry month) * basis`; no monthly re-tilt, '
+                 'the leg split drifts.\n')
     lines.append('Weight timing is causal (trailing 63d Sharpe **strictly before** each month). The CSV '
                  'book used data through the month, a subtle in-sample tilt that the simulator removes.\n')
 
@@ -59,11 +67,15 @@ def main():
         lines.append('| Series | Sharpe | Ann ret | Ann vol | MDD | days | note |')
         lines.append('|---|---:|---:|---:|---:|---:|---|')
         lines.append(row('Leg A ' + LABEL_LEG['A'],
-                         csv_metrics(f"_pct25/{LEGS[w]['A'][0]}/daily_returns.csv")))
+                         csv_metrics(os.path.join(LEGS[w]['A'][0], 'daily_returns.csv'))))
         lines.append(row('Leg B ' + LABEL_LEG['B'],
-                         csv_metrics(f"_pct25/{LEGS[w]['B'][0]}/daily_returns.csv")))
-        lines.append(row('CSV book (return arithmetic)', csv_metrics(f'_combined/sweep_pct25/{w}/daily_returns.csv'),
-                         extra='legacy momentum rule'))
+                         csv_metrics(os.path.join(LEGS[w]['B'][0], 'daily_returns.csv'))))
+        csv_book = os.path.join(BASE, '_combined', 'sweep_pct25', w, 'daily_returns.csv')
+        if os.path.exists(csv_book):
+            lines.append(row('CSV book (return arithmetic)', csv_metrics(csv_book),
+                             extra='legacy momentum rule'))
+        else:
+            lines.append('| CSV book (return arithmetic) | n/a | n/a | n/a | n/a | | not regenerated; legacy artifact absent |')
         for mech in ['A', 'B']:
             d = os.path.join(CONS, w, mech)
             df = pd.read_csv(os.path.join(d, 'daily_returns.csv'))
@@ -87,13 +99,29 @@ def main():
 
     # notes
     lines.append('## Reading\n')
-    lines.append('- **Mech A vs CSV book:** A reproduces the CSV book with a modest haircut '
-                 '(recent 1.24 vs 1.44 Sharpe; hist 0.71 vs 1.03). The gap is the honest cost of '
-                 'letting positions ride between monthly re-bases instead of the CSV arithmetic\'s '
-                 'implicit daily rebalancing, plus the removal of the through-month lookahead in the '
-                 'weight signal.\n')
-    lines.append('- **Mech B vs A:** B locks each fold\'s basis at fold start, so new capital '
-                 'enters slower; lower exposure (recent ann 5.8% vs 9.8%), lower vol.\n')
+    a_recent = consolidated_metrics('recent', 'A')
+    b_recent = consolidated_metrics('recent', 'B')
+    a_hist = consolidated_metrics('historical', 'A')
+    b_hist = consolidated_metrics('historical', 'B')
+    csv_recent = os.path.join(BASE, '_combined', 'sweep_pct25', 'recent', 'daily_returns.csv')
+    csv_hist = os.path.join(BASE, '_combined', 'sweep_pct25', 'historical', 'daily_returns.csv')
+    if os.path.exists(csv_recent) and os.path.exists(csv_hist):
+        csv_r = csv_metrics(csv_recent)
+        csv_h = csv_metrics(csv_hist)
+        lines.append('- **Mech A vs CSV book:** A Sharpe is %.2f vs %.2f recent and %.2f vs %.2f '
+                     'historical (A vs CSV). The gap reflects open positions riding between monthly '
+                     're-bases and the causal weight timing.\n'
+                     % (a_recent['sharpe'], csv_r['sharpe'], a_hist['sharpe'], csv_h['sharpe']))
+    else:
+        lines.append('- **CSV arithmetic comparison:** the legacy CSV book is not present, so no '
+                     'CSV-vs-consolidated claim is made here.\n')
+    lines.append('- **Mech B vs A:** B locks each fold basis at fold start. Recent Sharpe/return are '
+                 '%.3f / %.2f%% for B versus %.3f / %.2f%% for A; historical values are %.3f / '
+                 '%.2f%% for B versus %.3f / %.2f%% for A.\n'
+                 % (b_recent['sharpe'], b_recent['ann_ret'] * 100,
+                    a_recent['sharpe'], a_recent['ann_ret'] * 100,
+                    b_hist['sharpe'], b_hist['ann_ret'] * 100,
+                    a_hist['sharpe'], a_hist['ann_ret'] * 100))
     lines.append('- The standalone legs already embed their own fold-overlap normalization '
                  '(leg B = capital-weighted blend of 2-3 overlapping 1M folds), so the shared-account '
                  'book inherits that structure unchanged.\n')

@@ -29,6 +29,24 @@ BACKTEST_SETTINGS = {
 }
 
 # =================================================================
+# MARGIN SETTINGS (opt-in; behavior='off' preserves existing runs)
+# =================================================================
+# Margin is checked per-position on current market value, so it is
+# direction-agnostic and handles non-dollar-neutral (beta-hedged)
+# pairs: s2 leg = notional, s1 leg = |hr| * notional (median |hr|
+# ~0.5, ~12% of pairs have negative hr -> same-side book).
+#   required = ml * long_value + ms * short_value
+# Per-ticker overrides can be supplied via margin_rates
+#   {TICKER: {'long': x, 'short': y}} (falls back to globals).
+MARGIN_SETTINGS = {
+    'margin_long': 0.50,          # initial margin on long positions (frac of market value)
+    'margin_short': 0.50,         # initial margin on short positions
+    'maintenance_long': 0.25,     # maintenance margin, long (FINRA minimums)
+    'maintenance_short': 0.30,    # maintenance margin, short
+    'margin_behavior': 'off',     # off | report | reject
+}
+
+# =================================================================
 # WALK-FORWARD ARCHITECTURE
 # =================================================================
 FOLD_SETTINGS = {

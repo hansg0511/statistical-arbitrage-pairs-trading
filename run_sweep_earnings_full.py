@@ -165,6 +165,17 @@ for label in bd_labels:
         row.append('N/A')
 lines.append('| ' + ' | '.join(row) + ' |')
 
+lines.append("")
+lines.append("## Interpretation\n")
+lines.append("bd3 and bd5 are identical across all displayed starts and metrics. bd7 and bd9 "
+             "match on four of five starts; their only material difference is the 2024-01-01 "
+             "start, where bd9 is higher. That one start accounts for most of bd9's higher mean "
+             "Sharpe, so it is not sufficient evidence that bd9 is generally superior.\n")
+lines.append("bd7 and bd9 retain nearly the same number of trades (25.6 versus 25.2 mean trades), "
+             "while bd7 has lower Sharpe dispersion (0.73 versus 0.85). bd7 is therefore retained "
+             "as the conservative minimum-sufficient secondary filter; earnings screening remains "
+             "secondary to pair-selection stability.\n")
+
 summary_path = os.path.join(BASE_DIR, 'findings.md')
 with open(summary_path, 'w') as f:
     f.write('\n'.join(lines) + '\n')

@@ -1,0 +1,511 @@
+{
+  "generated_at_utc": "2026-09-08T09:30:15.487262+00:00",
+  "pipeline": "RESEARCH_PIPELINE_FIXED.md",
+  "fixed_leg_root": "fixed_diagnosis/_sweep_pct25",
+  "pct_per_pair": 0.25,
+  "capital": 1000000,
+  "momentum": {
+    "lookback_days": 84,
+    "step": 0.4,
+    "weight_bounds": [
+      0.1,
+      0.9
+    ],
+    "initial_weight_A": 0.5
+  },
+  "locked_pair": [
+    "sp500-12m/cross_sector_slide1m_noscreen",
+    "sp500-2m/cross_sector_slide3m_bd7"
+  ],
+  "price_snapshots": {
+    "core_recent_2m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/core_recent.pkl",
+      "sha256": "c3ca1a34a687deb11f11ce71230b3ef529e59f7137794fd1ab14b21524f6d241",
+      "exists": true,
+      "actual_sha256": "c3ca1a34a687deb11f11ce71230b3ef529e59f7137794fd1ab14b21524f6d241",
+      "matches": true
+    },
+    "core_recent_12m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/core_recent_12m.pkl",
+      "sha256": "3503f51d44ea43894c451ed6a686d625b299b40778d6f050f80abc1ba31b48fd",
+      "exists": true,
+      "actual_sha256": "3503f51d44ea43894c451ed6a686d625b299b40778d6f050f80abc1ba31b48fd",
+      "matches": true
+    },
+    "core_historical_2m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/core_historical.pkl",
+      "sha256": "0858947a9be19c4291b244cddc192f918fb4df1a0505961059e5137d20a83669",
+      "exists": true,
+      "actual_sha256": "0858947a9be19c4291b244cddc192f918fb4df1a0505961059e5137d20a83669",
+      "matches": true
+    },
+    "core_historical_12m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/core_historical_12m.pkl",
+      "sha256": "44092f80ea9b692098f951fd0b8eea9900f1deaf1f67a85995800732055665e9",
+      "exists": true,
+      "actual_sha256": "44092f80ea9b692098f951fd0b8eea9900f1deaf1f67a85995800732055665e9",
+      "matches": true
+    },
+    "sp500_recent_2m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/sp500_recent.pkl",
+      "sha256": "96fec4515ff77cbdfad495785f3fa6beb543055e475702f5a8a1b6ff47b5df0b",
+      "exists": true,
+      "actual_sha256": "96fec4515ff77cbdfad495785f3fa6beb543055e475702f5a8a1b6ff47b5df0b",
+      "matches": true
+    },
+    "sp500_recent_12m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/sp500_recent_12m.pkl",
+      "sha256": "3b79b2a7ba56b1638d3ccccb6187f7bc551291ff058685f6e13eb98833311482",
+      "exists": true,
+      "actual_sha256": "3b79b2a7ba56b1638d3ccccb6187f7bc551291ff058685f6e13eb98833311482",
+      "matches": true
+    },
+    "sp500_historical_2m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/sp500_historical.pkl",
+      "sha256": "a3cea24a8471dc532653cf0a759edb9440df53384169bfd25a1c2ac0c561cc5c",
+      "exists": true,
+      "actual_sha256": "a3cea24a8471dc532653cf0a759edb9440df53384169bfd25a1c2ac0c561cc5c",
+      "matches": true
+    },
+    "sp500_historical_12m": {
+      "path": "research/archive/pct25_comparison_audit/snapshots/sp500_historical_12m.pkl",
+      "sha256": "409c92be33e411d32ec3d612886c49fd0a2fd1d95565580a45125fb0ee774ece",
+      "exists": true,
+      "actual_sha256": "409c92be33e411d32ec3d612886c49fd0a2fd1d95565580a45125fb0ee774ece",
+      "matches": true
+    }
+  },
+  "selection": {
+    "status": "locked_quantitative_selection",
+    "pair_universe": 496,
+    "leg_universe": 32,
+    "recent_starts": 5,
+    "historical_starts": 1,
+    "consensus_rule": "top 20 by separate score, rank-average, and joined Sharpe in both mechanisms",
+    "human_criteria_applied": false
+  },
+  "commands": [
+    "python run_fixed_reports.py",
+    "python research/run_combined_backtest.py --window recent --mechanism both --lookback 63 --step 0.10 --clamp 0.25 0.75",
+    "python research/run_combined_backtest.py --window historical --mechanism both --lookback 63 --step 0.10 --clamp 0.25 0.75",
+    "python research/combined_backtest_synthetic_test.py",
+    "python research/pair_sweep_consolidated.py --mechanism both --pct 0.25 --top 20 --report",
+    "python research/write_joint_eval.py",
+    "python research/write_joint_vs_separate.py",
+    "python research/compare_rankings.py",
+    "python research/write_human_analysis.py",
+    "python research/write_top7_period.py",
+    "python research/write_pairs_with_hist1.py",
+    "python research/write_pairs_with_recent1.py",
+    "python research/evaluate_clean40.py",
+    "python research/step_robustness.py step --force",
+    "python research/step_robustness.py lookback --force",
+    "python research/step_robustness.py joint --force",
+    "python research/step_robustness.py bounds --force",
+    "python research/step_robustness.py frontier --force",
+    "python research/step_robustness.py final --force",
+    "python research/step_robustness.py clean --force",
+    "python research/momentum_ff_pairs.py",
+    "python research/momentum_ff_rankavg.py",
+    "python research/run_ff_leg.py sp500-12m cross_sector_slide1m_noscreen",
+    "python research/run_ff_leg.py sp500-2m cross_sector_slide3m_bd7",
+    "python research/run_ff_pair_multistart.py",
+    "python research/run_ff_combined.py",
+    "python research/plot_ff_best84.py clean40 --reports-only",
+    "python research/plot_ff_best84.py clean40 --plots-only",
+    "python research/write_consolidated_comparison.py",
+    "python run_fixed_comparison.py",
+    "python research/write_pipeline_manifest.py"
+  ],
+  "inputs": {
+    "RESEARCH_PIPELINE_FIXED.md": {
+      "exists": true,
+      "sha256": "f55c0ce79cde2e68e281ae23e9a11583de6b13b8a277d076d135b0afb4265ddc"
+    },
+    "research/selected_book_config.json": {
+      "exists": true,
+      "sha256": "1b7df91a0438da94d99497a215609a1495fcff2b2c4a74bcc6529f43359ab601"
+    },
+    "notebooks/08_combined_momentum_book.ipynb": {
+      "exists": true,
+      "sha256": "9f7a49fffd141b6bdc3dbb3316b021fb41f5ab328d2ebc5f06d341b911bf6e9d"
+    },
+    "CACHE_BUG_FIX_REPORT.md": {
+      "exists": true,
+      "sha256": "a51962dc0147044eeed8887c4fd67e291d96c55d46311551d6718a8aa84b9da6"
+    },
+    "diagnosis/01_baseline_instability (old)/findings.md": {
+      "exists": true,
+      "sha256": "ca115ec8549fd8869280ea2537ef8f75c06950d085de3cef67372ff59a4fab25"
+    },
+    "diagnosis/02_earnings_screen_baseline (old)/findings.md": {
+      "exists": true,
+      "sha256": "a25655580f34f517c27498ec7bfc270a2765acf8efdd072fc31d7cf5d22f9322"
+    },
+    "diagnosis/02b_earnings_sweep_full/findings.md": {
+      "exists": true,
+      "sha256": "4f425d48435a13dae50ead148123aae8af9fc2883b789a92e5588095607642b1"
+    },
+    "diagnosis/03_pair_stability (old)/findings.md": {
+      "exists": true,
+      "sha256": "e6cca1ff453f8bc28e32dd7be99a8d525bd1007c7d6d156a4cd2cdf0fd2636ae"
+    },
+    "diagnosis/03_pair_stability (old)/comparison_findings.md": {
+      "exists": true,
+      "sha256": "f2191e0747e276756b6c787ae3396dd77d0173307e509494c830bd8cd5561232"
+    },
+    "diagnosis/04_max_pairs_sweep/findings.md": {
+      "exists": true,
+      "sha256": "b2aaba622bb1fa3d51e8c7dd73754c3d4a0fd3f46453046fcb2a28f176e0f918"
+    },
+    "fixed_diagnosis/05/findings.md": {
+      "exists": true,
+      "sha256": "c377ab99aec407f62c310a38fbec8b4baf46feb1c7f835200170bac79ba8150a"
+    },
+    "fixed_diagnosis/06/findings.md": {
+      "exists": true,
+      "sha256": "39abcd2d95f390136fce56227c5ca9d648ec52515aff6a63bd778930ac93ce97"
+    },
+    "fixed_diagnosis/07/findings.md": {
+      "exists": true,
+      "sha256": "c7c12299e08638cce83a3aca7d178bb2cc8348229b3ad3ea9e442dfe5f048972"
+    },
+    "fixed_diagnosis/08a/findings.md": {
+      "exists": true,
+      "sha256": "5838855f855075b19ef239cf98893a760608e35ecf50bdb6a8f8146d2e251a7e"
+    },
+    "fixed_diagnosis/08b/findings.md": {
+      "exists": true,
+      "sha256": "7b01962a27e471a66e31b10277dc74b10d05f37683027f2b7aa683bc024d5cb0"
+    },
+    "fixed_diagnosis/09a/findings.md": {
+      "exists": true,
+      "sha256": "0c2b586ead73513d88c1f0d9f6bcc9ca6399ab0a038e920f97531b12d4ef52c6"
+    },
+    "fixed_diagnosis/09b/findings.md": {
+      "exists": true,
+      "sha256": "5fbdbd08b708755ea7f816a16f8c8d8f856f1dc0035da379feb03768929d0886"
+    },
+    "fixed_diagnosis/10/findings.md": {
+      "exists": true,
+      "sha256": "1495a65068d3ec5c5d493103694eec041a2a7ae8071fe696faa4a42e5c9e4ddc"
+    },
+    "fixed_diagnosis/10a/findings.md": {
+      "exists": true,
+      "sha256": "b666a065b6d5f57f3a890eb9066883f3f9568b36632ad2cedb900e23d4edf8fc"
+    },
+    "fixed_diagnosis/10b/findings.md": {
+      "exists": true,
+      "sha256": "dc07cd7237171591c74aa662694b24ec9ac72216be919884b5f864e47d73f356"
+    },
+    "fixed_diagnosis/_combined/consolidated/recent/A/metrics.json": {
+      "exists": true,
+      "sha256": "0d1f6815a6ece2c0d8c290f800ebac2bfecf74bc0b37881c931c6267c5497df6"
+    },
+    "fixed_diagnosis/_combined/consolidated/recent/B/metrics.json": {
+      "exists": true,
+      "sha256": "ae3a053d282fcd2d40b86d97df9a313e8b645bb87256c8141e886c908a43e911"
+    },
+    "fixed_diagnosis/_combined/consolidated/historical/A/metrics.json": {
+      "exists": true,
+      "sha256": "fc42f6d4351a8a6dd0b2dd2ce80b772cba0ecc62d8a0ac194c5c7544973fff9b"
+    },
+    "fixed_diagnosis/_combined/consolidated/historical/B/metrics.json": {
+      "exists": true,
+      "sha256": "40c35d949ad3377671dad584cdc63c1b22f98c68a8453a59d781884776919ffc"
+    },
+    "fixed_diagnosis/08b/2014-01-01_same_sector_slide1m_bd7/metrics.json": {
+      "exists": true,
+      "sha256": "60517d296185847b2914a6aaa1d2637fafb3a15ce409cb2cbe402fd18b1677f7"
+    },
+    "fixed_diagnosis/09b/2014-01-01_same_sector_slide1m_bd7/metrics.json": {
+      "exists": true,
+      "sha256": "a9243e3b63a17a9823049d0bb09f083597087aeca2f93f1fc219aebfde645ab2"
+    },
+    "fixed_diagnosis/_sweep_pct25/08b/2014-01-01_same_sector_slide1m_bd7/metrics.json": {
+      "exists": true,
+      "sha256": "554766ecdd2f270ff0a863506e2b3e08bd6090f8f6f27d212e9840b2c35f1aea"
+    },
+    "fixed_diagnosis/_sweep_pct25/09b/2014-01-01_same_sector_slide1m_bd7/metrics.json": {
+      "exists": true,
+      "sha256": "4f17176d3b73f9c01f728480fb2b8a3748b5d685cc0b8801ed286adcfa266859"
+    },
+    "fixed_diagnosis/_COMPARISON_WITH_PIPELINE.md": {
+      "exists": true,
+      "sha256": "aa2a447eca7d935ec073f9d43fff17ea0ba09d23e4c92a50ef12252110029fb2"
+    },
+    "fixed_diagnosis/_CONSOLIDATED_COMPARISON.md": {
+      "exists": true,
+      "sha256": "76336d7c63a662431c57a918b5813b37e0758f2179f714047b0431ead81b372e"
+    },
+    "fixed_diagnosis/_FF_COMBINED_PCT25.md": {
+      "exists": true,
+      "sha256": "1581d291aad1730bbad9e82f55481cc59accef6585c737a7201247139b02582c"
+    },
+    "fixed_diagnosis/separate/_COMBINED_BOOK_CONSOLIDATED.md": {
+      "exists": true,
+      "sha256": "c01c9e88ddef113e2e9b5049a9fa53a7ee13a4c5d8085dd6d3323a80127a0461"
+    },
+    "fixed_diagnosis/separate/_PAIRS_WITH_HIST1.md": {
+      "exists": true,
+      "sha256": "70b4f67b8bca79df600eff3e2e55df6484a63b0eced80a8a2c92e19d41806305"
+    },
+    "fixed_diagnosis/separate/_PAIRS_WITH_RECENT1.md": {
+      "exists": true,
+      "sha256": "5955978e331026f7036232f6e23754b7e752f9882fb1c5f29249da6ba57619ea"
+    },
+    "fixed_diagnosis/separate/_TOP15_CONFIG_PAIRS.md": {
+      "exists": true,
+      "sha256": "ffaa1cb83505e5908bcd2738ecd24cc8ba10f6d47d9948b89d99f23d4da26310"
+    },
+    "fixed_diagnosis/separate/_TOP15_PER_PERIOD.md": {
+      "exists": true,
+      "sha256": "ef2e4aa3303bf381ceb1e214149c6c29cd0cf622fe4ef59464a4f82403cce3e2"
+    },
+    "fixed_diagnosis/joint/_JOINED_CONFIG_PAIRS.md": {
+      "exists": true,
+      "sha256": "c5b58fa39d3e0dba26e8ce595eeb50fd4a26f7a33e6789a6bb3f33b1f1ffd87a"
+    },
+    "fixed_diagnosis/joint/_JOINED_PER_PERIOD.md": {
+      "exists": true,
+      "sha256": "6b03f478db71cdd9c4a0d109e6bf1fd49521731de22968f3a0a0d864e81998f8"
+    },
+    "fixed_diagnosis/joint/_JOINT_VS_SEPARATE.md": {
+      "exists": true,
+      "sha256": "568ea954b8e11405f64fe40f4ce761a478459b7a623f1e73f656bab414240859"
+    },
+    "fixed_diagnosis/joint/compare_pairs.csv": {
+      "exists": true,
+      "sha256": "4ec9323170e424ff216a66ba93ac99b72e33cfd3aa95f35e058536fbb33a79cf"
+    },
+    "fixed_diagnosis/joint/joined_legs.csv": {
+      "exists": true,
+      "sha256": "35c7c3ea55daa2b5dfe85fec8562fe677f936e0f5bab44aae2e1cf40320b70a6"
+    },
+    "fixed_diagnosis/joint/joined_pairs.csv": {
+      "exists": true,
+      "sha256": "7d2bc0545ef4a3cd1042100935845c705a6dd964611600700285a2128904013b"
+    },
+    "fixed_diagnosis/compare/_RANK_COMPARISON.md": {
+      "exists": true,
+      "sha256": "54bd2be6db6951db30579adec87c730d4ef5b3e85e0874b8f211535f602ccbd0"
+    },
+    "fixed_diagnosis/compare/rank_comparison_A.csv": {
+      "exists": true,
+      "sha256": "88e917ed77c2841ab97b8d98509fdfaa9580c479fc6b22a65510f9d5c69f7dae"
+    },
+    "fixed_diagnosis/compare/rank_comparison_B.csv": {
+      "exists": true,
+      "sha256": "befc928e448e5e02602ab99781edfc674bfb05b6c9c0679c2eed088783a85c80"
+    },
+    "fixed_diagnosis/compare/_HUMAN_ANALYSIS_DEFAULT.md": {
+      "exists": true,
+      "sha256": "a848269ed4019588eb75aa0ab91d81de2296e2faca8f854f4a638f2448c29964"
+    },
+    "fixed_diagnosis/compare/_STEP_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "4d1e6d7d87488f9357d057348464a48ad667ebb32fad450dfc3cfae4387a4a82"
+    },
+    "fixed_diagnosis/compare/_LOOKBACK_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "a766fb0b69198e1b63da1fd8a7bad0ca4b22a314a9e60586796f362f07150c9c"
+    },
+    "fixed_diagnosis/compare/_JOINT_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "d21aabd6a3bfb8ff481a7d2b17c8bd9632d451745b51423e805f2b05a8daf26a"
+    },
+    "fixed_diagnosis/compare/_BOUNDS_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "e5426ef84c3e3813babc757c82d17c3f7c45b51435f7b12e4ec0ab418472c075"
+    },
+    "fixed_diagnosis/compare/_FRONTIER_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "b049adb45e082ab77ddb5524784f8816d4ab81364cd91fffadc91c8c0a68aead"
+    },
+    "fixed_diagnosis/compare/_FINAL_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "9398529718fffa9999f73de017d6de43b189b98eafea69d37b60257e868cad74"
+    },
+    "fixed_diagnosis/compare/_CLEAN_ROBUSTNESS.csv": {
+      "exists": true,
+      "sha256": "3bbff8b7fe2233ad3dbe00df31925d54099b487482da5244571df514fd0d6ec1"
+    },
+    "fixed_diagnosis/compare/_MOMENTUM_FF_PAIRS.md": {
+      "exists": true,
+      "sha256": "1210505e4729a4cab6e17aa286deccc652430090bed82256e281a36115d63d24"
+    },
+    "fixed_diagnosis/compare/momentum_sensitivity.csv": {
+      "exists": true,
+      "sha256": "9a0a6d4277356ea7716b97678a1c23d988af3a4ca78c927b7b24327c4b81a027"
+    },
+    "fixed_diagnosis/compare/ff_regressions.csv": {
+      "exists": true,
+      "sha256": "84d8e304cabbb45aec62421780b6ad0356863a201805f51003c71f3a1f237c52"
+    },
+    "fixed_diagnosis/compare/_FF_PAIR_MULTISTART_sp500-12m_cross_sector_slide1m_noscreen_sp500-2m_cross_sector_slide3m_bd7.md": {
+      "exists": true,
+      "sha256": "591b6b7ec7298a3789e5ec65cf1560efd5b36e0ec98db13a84ad77a5f3735608"
+    },
+    "fixed_diagnosis/compare/_FF_PAIR_MULTISTART_sp500-12m_cross_sector_slide1m_noscreen_sp500-2m_cross_sector_slide3m_bd7.csv": {
+      "exists": true,
+      "sha256": "cb4d1c967d80c39aaa31a0679cf98d09dd6ebab0e973413bd7085460c8cb8342"
+    },
+    "fixed_diagnosis/compare/_FF_LEG_sp500-12m_cross_sector_slide1m_noscreen.md": {
+      "exists": true,
+      "sha256": "0e98d158344ddcb783b93bee373df15b91f34ee71f121dff05ccf5ed9469ca4a"
+    },
+    "fixed_diagnosis/compare/_FF_LEG_sp500-12m_cross_sector_slide1m_noscreen.csv": {
+      "exists": true,
+      "sha256": "12bf355b1e901194a1d0ea31d20014d1261e038b63b17e1eef10a4c557636e26"
+    },
+    "fixed_diagnosis/compare/_FF_LEG_sp500-2m_cross_sector_slide3m_bd7.md": {
+      "exists": true,
+      "sha256": "dcefd16f1b529084b0ac6d3213098a019e09cfb9dd405b712e368f4b26f610cb"
+    },
+    "fixed_diagnosis/compare/_FF_LEG_sp500-2m_cross_sector_slide3m_bd7.csv": {
+      "exists": true,
+      "sha256": "5869f45213268deaf4bd4e682b8f1adea98b2acade9890dd54ddee51ab6a3797"
+    },
+    "fixed_diagnosis/rankavg/_RANKAVG_SELECTION.md": {
+      "exists": true,
+      "sha256": "09c219b860c4eecd89534f136cd1da5d08f51fac1eb1e80228f0f6c9c9fdadcd"
+    },
+    "fixed_diagnosis/rankavg/_MOMENTUM_FF_RANKAVG.md": {
+      "exists": true,
+      "sha256": "99f8cfe7ccee62d1a755ac7f3fa12be5ebc0d7ab783427efd8fd611657f8731b"
+    },
+    "fixed_diagnosis/rankavg/momentum_sensitivity.csv": {
+      "exists": true,
+      "sha256": "c66613f13e11067f0963a60046d3974162484a3406ad0646bc8f412fcd5f5a0a"
+    },
+    "fixed_diagnosis/rankavg/ff_regressions.csv": {
+      "exists": true,
+      "sha256": "6351d49eae11ed75f0b4a048c0a3539ee6d284f05fb1a92380e92ede5cb5b07b"
+    },
+    "fixed_diagnosis/clean40/_CLEAN40_PAIR_RANKS.md": {
+      "exists": true,
+      "sha256": "0d0926de762543b34235c1a788461527ca98aeab643facf622136e38b5ed0e18"
+    },
+    "fixed_diagnosis/clean40/_CLEAN40_PAIR_RANKS_A.csv": {
+      "exists": true,
+      "sha256": "dee2225d52247cbd0abcefa38e789b4270c7c473933f493c712a952f573dea4a"
+    },
+    "fixed_diagnosis/clean40/_CLEAN40_PAIR_RANKS_B.csv": {
+      "exists": true,
+      "sha256": "e0ae1b45c46ad0a26b9ea401817fa5376624c8025f4f43c25fa58448fed8c1b4"
+    },
+    "fixed_diagnosis/clean40/_HUMAN_ANALYSIS.md": {
+      "exists": true,
+      "sha256": "7591826d92ae884a1a117fe6e9e3b4c63732df086e0547d7f7bca3a9dc9a876e"
+    },
+    "fixed_diagnosis/clean40/_FF_PAIR_MULTISTART_clean40.md": {
+      "exists": true,
+      "sha256": "33c54a08be1d8c8519c50f4746c99cd91c1314c797a3a0308eb9323f1a2ab2e3"
+    },
+    "fixed_diagnosis/clean40/_FF_PAIR_MULTISTART_clean40.csv": {
+      "exists": true,
+      "sha256": "10df670c88393b831e22482011ab814086ecda6be3e95356ebf49eaf2f08beb7"
+    },
+    "fixed_diagnosis/clean40/_FF_COMPARE_clean40_vs_default.md": {
+      "exists": true,
+      "sha256": "aa056ce09a69f58e0414571743fa0cd27ca1320f1f12b280a88f7d1241baa0cf"
+    },
+    "research/run_combined_backtest.py": {
+      "exists": true,
+      "sha256": "0038df4b41e7ee986651b12345000e1fb7aed56569e84300a281b77058b69347"
+    },
+    "research/combined_backtest_synthetic_test.py": {
+      "exists": true,
+      "sha256": "fd0ec240e7f9d9e98c130ef94c8a88b2bcb956b4ea72e674c2dc4127352da369"
+    },
+    "research/pair_sweep_consolidated.py": {
+      "exists": true,
+      "sha256": "fba2f03827f414844955e1b672e8db67ba1cdae60e39e570bc5cacffbd1f6f22"
+    },
+    "research/compare_rankings.py": {
+      "exists": true,
+      "sha256": "bb88fdcc76180e20e8a85753d2c8a62fd78901f625e9184333c635b35f6be24d"
+    },
+    "research/write_human_analysis.py": {
+      "exists": true,
+      "sha256": "0a01f32ef3862fa3a185cace41f1acfa919a4b13ebd75f437570e1fc2c7e5c5c"
+    },
+    "research/write_joint_eval.py": {
+      "exists": true,
+      "sha256": "f7e50f2889f7d3e2be946028a81840c3d92677a0922aaf4bb8dd972de12e193e"
+    },
+    "research/write_joint_vs_separate.py": {
+      "exists": true,
+      "sha256": "329cbd7839d156a02fddc78843a4ad51a30fcd7ba29aad0be8e88dc9a986d885"
+    },
+    "research/write_top7_period.py": {
+      "exists": true,
+      "sha256": "9088acc874d3c13b0ad70521b0a9d1b2cdac06e59e08d7ac038a00b4463a766f"
+    },
+    "research/write_pairs_with_hist1.py": {
+      "exists": true,
+      "sha256": "a1b4fdbf79833d28cabfdc1714c6d1f504a16d48a15807ee10228133768e5fac"
+    },
+    "research/write_pairs_with_recent1.py": {
+      "exists": true,
+      "sha256": "8bf4904d40cdacf07f37d10b73bc9985e41abc1b54ab4965dca66d5034999ec8"
+    },
+    "research/write_consolidated_comparison.py": {
+      "exists": true,
+      "sha256": "27421eaa6940e83da0a429317c122983ebc1ca21c81dd4aca0dc9261d6023e98"
+    },
+    "run_fixed_comparison.py": {
+      "exists": true,
+      "sha256": "26365bd1afb824e1df2c13c31f7b783b570f44db8f3b2eb20e8a81b96a95d66e"
+    },
+    "run_fixed_reports.py": {
+      "exists": true,
+      "sha256": "3e3201f49960ebc8cfc28ebe8f770b0b4df38e21d6542ea58de478ddb2cd4039"
+    },
+    "regen_04_02b.py": {
+      "exists": true,
+      "sha256": "41d480b6951505f584751cf3f58428c7edfc404ae80342bca77cc0932102b1da"
+    },
+    "run_sweep_earnings_full.py": {
+      "exists": true,
+      "sha256": "f262e4ed56eacfa279bf0992055997aa765c20ffb9ec4930df1ea0ca47adf600"
+    },
+    "research/momentum_ff_pairs.py": {
+      "exists": true,
+      "sha256": "22f9b96185a6e2f29cf5e7b08a1663c775c4a6b95006d5bf26f9e835ea17a0d7"
+    },
+    "research/momentum_ff_rankavg.py": {
+      "exists": true,
+      "sha256": "71d0dc27effc7c72095ff5cd149b851dbe859b1777bb960f982c59eea2b72b44"
+    },
+    "research/evaluate_clean40.py": {
+      "exists": true,
+      "sha256": "95a08628a8fff2820b03442a4c8498c31b04b2dee4d8b849139bffd9e52db6a9"
+    },
+    "research/run_ff_combined.py": {
+      "exists": true,
+      "sha256": "1e71821593a906cd553e559a632544a592590c2d037f425874251fe83f30595c"
+    },
+    "research/run_ff_pair_multistart.py": {
+      "exists": true,
+      "sha256": "a9b2b39061afcf2d7345ab34b158137d4dc631a3f2589c8f39f8ff1b8a9d3ed4"
+    },
+    "research/run_ff_leg.py": {
+      "exists": true,
+      "sha256": "564251334f3f8768e86e706250e4094f5e6881edc2ae44e170ee372bc696b705"
+    },
+    "research/plot_ff_best84.py": {
+      "exists": true,
+      "sha256": "15d2c41339aed49d567496395aad9972cc8693a4b5623ae499e70725ae90e332"
+    },
+    "research/step_robustness.py": {
+      "exists": true,
+      "sha256": "b2fe42157740dc8ae9cb087a5458322d6c10e9beb0725c9753f3099c8fe558bc"
+    },
+    "research/write_pipeline_manifest.py": {
+      "exists": true,
+      "sha256": "ab3c473b13355361191ca9ac1e2bde445fb00072f7d3e1f3e9bb3e6e21e80e0b"
+    }
+  },
+  "original_pipeline_preserved": true
+}

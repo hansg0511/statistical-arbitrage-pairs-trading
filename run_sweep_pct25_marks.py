@@ -10,15 +10,26 @@ exit_reason, return). 0.25 may add trades where 0.045 hit zero_size.
 Usage:
   python run_sweep_pct25_marks.py [--workers N] [--only SEC] [--skip SEC ...] [--verify]
 """
-import subprocess, json, os, sys, threading, argparse, pandas as pd
+import subprocess, json, os, sys, threading, argparse, time, pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.result_validation import validate_run_output
 
 EARNINGS_CORE = 'research/earnings_cache/earnings_dates.pkl'
-EARNINGS_SP500 = 'research/earnings_cache/earnings_dates_sp500.pkl'
+EARNINGS_SP500 = EARNINGS_CORE
 CACHE_DIR = 'research/cache'
 BASE = 'fixed_diagnosis'
 OUT_ROOT = os.path.join(BASE, '_sweep_pct25')
 PCT = 0.25
+
+
+def snapshot_path(snapshot_dir, cfg):
+    if not snapshot_dir:
+        return None
+    period = 'historical' if cfg['end'] == '2020-01-01' else 'recent'
+    selection_suffix = '_12m' if cfg['sel'] == 12 else ''
+    return os.path.join(
+        snapshot_dir, f"{cfg['universe']}_{period}{selection_suffix}.pkl"
+    )
 
 
 def _grid(earnings):
@@ -65,7 +76,22 @@ def out_dir(section, sd, label):
     return os.path.join(OUT_ROOT, section, f'{sd}_{label}')
 
 
-def run_job(section, sd, label, extra_args):
+def has_rejected_orders(output_dir):
+    """A pct=0.25 mark run is unusable when it contains failed entry orders.
+
+    Older attempts predate the leverage setup and can leave a rejected-orders
+    artifact behind even though the directory has metrics and trade marks.
+    """
+    path = os.path.join(output_dir, 'rejected_orders.csv')
+    if not os.path.exists(path):
+        return False
+    try:
+        return not pd.read_csv(path).empty
+    except (OSError, pd.errors.EmptyDataError):
+        return True
+
+
+def run_job(section, sd, label, extra_args, price_snapshot=None):
     cfg = SECTIONS[section]
     od = out_dir(section, sd, label)
     os.makedirs(od, exist_ok=True)
@@ -79,10 +105,11 @@ def run_job(section, sd, label, extra_args):
         '--no-earnings_screen',
         '--max_pairs', '20',
         '--pct_per_pair', str(PCT),
+        '--broker_leverage', '100',
         '--cache_dir', CACHE_DIR,
         '--sel_months', str(cfg['sel']),
         '--workers', '1',
-    ] + list(extra_args)
+    ] + (['--price_snapshot', price_snapshot] if price_snapshot else []) + list(extra_args)
     print(f"[START] sec{section} {sd} {label}", flush=True)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
@@ -94,6 +121,14 @@ def run_job(section, sd, label, extra_args):
         if result.stderr:
             f.write('\n--- STDERR ---\n')
             f.write(result.stderr)
+    if result.returncode != 0:
+        print(f"  [FAIL] sec{section} {sd} {label}: subprocess exit {result.returncode}", flush=True)
+        return
+    validation = validate_run_output(od)
+    if not validation['valid']:
+        details = '; '.join(validation['reasons'])
+        print(f"  [FAIL] sec{section} {sd} {label}: {details}", flush=True)
+        return
     mp = os.path.join(od, 'metrics.json')
     if os.path.exists(mp):
         with open(mp) as f:
@@ -146,6 +181,12 @@ def main():
     ap.add_argument('--only', type=str, default=None)
     ap.add_argument('--skip', type=str, nargs='*', default=[])
     ap.add_argument('--verify', action='store_true')
+    ap.add_argument('--force', action='store_true',
+                    help='Re-run every job even if trade_marks.csv already exists.')
+    ap.add_argument('--pause', type=float, default=15.0,
+                    help='Seconds to sleep between completed jobs (rate-limit cushion).')
+    ap.add_argument('--snapshot-dir', type=str, default=None,
+                    help='Directory containing scoped price snapshots.')
     args = ap.parse_args()
 
     order = [s for s in SECTIONS if s not in args.skip]
@@ -171,16 +212,26 @@ def main():
         cfg = SECTIONS[section]
         for sd in cfg['starts']:
             for label, extra in cfg['grid']:
-                if not os.path.exists(os.path.join(out_dir(section, sd, label), 'trade_marks.csv')):
-                    jobs.append((section, sd, label, extra))
+                od = out_dir(section, sd, label)
+                needs_run = args.force or not os.path.exists(os.path.join(od, 'trade_marks.csv'))
+                if not needs_run and not validate_run_output(od)['valid']:
+                    needs_run = True
+                if not needs_run and has_rejected_orders(od):
+                    needs_run = True
+                if needs_run:
+                    price_snapshot = snapshot_path(args.snapshot_dir, cfg)
+                    if price_snapshot and not os.path.isfile(price_snapshot):
+                        ap.error(f'price snapshot does not exist: {price_snapshot}')
+                    jobs.append((section, sd, label, extra, price_snapshot))
 
     total = sum(len(SECTIONS[s]['starts']) * len(SECTIONS[s]['grid']) for s in order)
     print(f"Sections: {order} | total {total} | remaining {len(jobs)} | workers {args.workers}", flush=True)
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         futures = {ex.submit(run_job, *j): j for j in jobs}
-        for _ in as_completed(futures):
-            pass
+        for i, _ in enumerate(as_completed(futures)):
+            if args.pause and i < len(jobs) - 1:
+                time.sleep(args.pause)
 
     done = [r for r in results if r['marks']]
     print(f"\nCompleted {len(done)} runs with marks.")

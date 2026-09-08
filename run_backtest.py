@@ -10,13 +10,13 @@ import warnings
 
 # Internal imports from GITHUBREPO/src
 from src.constants import TICKERS_CORE, TICKERS_SP500, SECTOR_MAP_CORE, SECTOR_MAP_SP500
-from src.data_loader import DataLoader
+from src.data_loader import DataLoader, load_or_fetch_prices
 from src.pair_selection import PairSelector
 from src.walk_forward import FoldBuilder
 from src.backtest import PairTradingStrategy, ZScoreData, prepare_backtest_data
-from src.config import STRATEGY_PARAMS, BACKTEST_SETTINGS, FOLD_SETTINGS, OUTPUT_DIR, PROFILES
+from src.config import STRATEGY_PARAMS, BACKTEST_SETTINGS, FOLD_SETTINGS, OUTPUT_DIR, PROFILES, MARGIN_SETTINGS
 from src.earnings_screen import EarningsScreen
-from src.pair_cache import PairSelectionCache
+from src.pair_cache import filter_pairs_by_half_life
 from src.gatev_selection import GatevSelector
 from src.gatev_strategy import GatevStrategy, GatevData, prepare_gatev_data
 
@@ -47,6 +47,8 @@ def parse_args():
     parser.add_argument('--initial_cash', type=float, default=BACKTEST_SETTINGS['initial_cash'], help='Starting capital')
     parser.add_argument('--pct_per_pair', type=float, default=BACKTEST_SETTINGS['pct_per_pair'], help='Equity fraction per pair')
     parser.add_argument('--max_pairs', type=int, default=BACKTEST_SETTINGS['max_pairs_per_fold'], help='Max pairs per fold')
+    parser.add_argument('--broker_leverage', type=float, default=1.0,
+                        help='Broker buying-power leverage (default 1.0)')
     parser.add_argument('--log_space', action='store_true', default=BACKTEST_SETTINGS['log_space'], help='Use log prices')
     parser.add_argument('--dollar_neutral', action='store_true', default=BACKTEST_SETTINGS['dollar_neutral'], help='Dollar-neutral position sizing (equal notional each leg)')
     parser.add_argument('--no_warmup', action='store_true', help='Disable data warmup period (historical buffer)')
@@ -70,8 +72,22 @@ def parse_args():
     parser.add_argument('--earnings_cache', type=str, default=None, help='Path to shared earnings cache pickle')
     parser.add_argument('--earnings_block_days', type=int, default=0, help='Block entry for N days after an earnings event')
 
+    # Margin
+    parser.add_argument('--margin_behavior', type=str, default=MARGIN_SETTINGS['margin_behavior'], choices=['off', 'report', 'reject'],
+                        help='Margin mode: off (unchanged behavior), report (log only), reject (gate entries)')
+    parser.add_argument('--margin_long', type=float, default=MARGIN_SETTINGS['margin_long'], help='Initial margin on long positions (frac of market value)')
+    parser.add_argument('--margin_short', type=float, default=MARGIN_SETTINGS['margin_short'], help='Initial margin on short positions')
+    parser.add_argument('--maintenance_long', type=float, default=MARGIN_SETTINGS['maintenance_long'], help='Maintenance margin on longs')
+    parser.add_argument('--maintenance_short', type=float, default=MARGIN_SETTINGS['maintenance_short'], help='Maintenance margin on shorts')
+    parser.add_argument('--margin_rates', type=str, default=None, help='JSON file of per-ticker margin overrides {TICKER: {"long": x, "short": y}}')
+
     # Cache
-    parser.add_argument('--cache_dir', type=str, default='research/cache', help='Directory for pair selection cache')
+    parser.add_argument('--cache_dir', type=str, default='research/cache',
+                        help='Legacy pair-selection cache directory (not used by runners)')
+    parser.add_argument('--price_snapshot', type=str, default=None,
+                        help='Load this strict local price snapshot instead of calling yfinance')
+    parser.add_argument('--write_price_snapshot', type=str, default=None,
+                        help='Fetch prices normally, then write the full market-data snapshot here')
 
     # Market investment (Method 2: idle cash → SPY)
     parser.add_argument('--market_invest', action='store_true', default=False, help='Invest idle cash in SPY')
@@ -85,6 +101,8 @@ def parse_args():
     parser.add_argument('--workers', type=int, default=4, help='Number of parallel fold workers')
     
     args = parser.parse_args()
+    if args.price_snapshot and args.write_price_snapshot:
+        parser.error('--price_snapshot and --write_price_snapshot are mutually exclusive')
     args._provided = {
         action.dest
         for action in parser._actions
@@ -118,6 +136,13 @@ def run_backtest():
     if args.mode == 'coint':
         _merge_profile(args)
 
+    margin_rates = {}
+    if args.margin_rates:
+        import json
+        with open(args.margin_rates) as f:
+            margin_rates = json.load(f)
+    args.margin_rates_dict = margin_rates
+
     # Select universe from profile
     universe_name = PROFILES[args.profile].get('universe', 'sp500')
     if universe_name == 'core':
@@ -144,7 +169,16 @@ def run_backtest():
     
     # 1. Fetch Data
     loader = DataLoader(TICKERS, start=args.start, end=args.end, use_warmup=not args.no_warmup)
-    master_df = loader.fetch_prices()
+    try:
+        master_df, price_snapshot = load_or_fetch_prices(
+            loader, args.price_snapshot, args.write_price_snapshot
+        )
+    except (OSError, ValueError) as exc:
+        print(f'Error: {exc}')
+        return
+    if price_snapshot:
+        print(f"Price snapshot {price_snapshot['mode']}: {price_snapshot['path']} "
+              f"({price_snapshot['sha256'][:12]})")
     if master_df.empty:
         print("Error: No data fetched. Check your internet connection and ticker list.")
         return
@@ -180,16 +214,16 @@ def run_backtest():
     print(f"Generated {len(fb.folds)} walk-forward folds.")
 
     selector = PairSelector(pvalue_threshold=args.pvalue)
-    pair_cache = PairSelectionCache(args.cache_dir)
     from src.config import pool_path_for
     from src.pair_cache import PoolCache
-    pool_path = pool_path_for(args.sel_months, universe_name, args.cross_sector) if args.mode == 'coint' else None
+    pool_path = pool_path_for(args.sel_months, universe_name, args.cross_sector, args.profile) if args.mode == 'coint' else None
     pool_cache = PoolCache(pool_path, prefiltered=(pool_path is not None and pool_path.endswith('core_2m.pkl'))) if pool_path else None
     fold_summaries = []
     all_trade_logs = []
     all_daily_returns = []
     all_daily_active_counts = []
     all_rejected_orders = []
+    all_daily_margin = []
     
     # Pre-load H&A cache if using coint mode
     huck_cache = None
@@ -218,6 +252,8 @@ def run_backtest():
 
             cerebro = bt.Cerebro()
             cerebro.broker.setcash(args.initial_cash)
+            if args.broker_leverage != 1.0:
+                cerebro.broker.setcommission(leverage=args.broker_leverage)
             cerebro.broker.set_coc(True)
             data_count = 0
 
@@ -279,95 +315,75 @@ def run_backtest():
                 viable_pairs = raw[mask].sort_values('cointegration_pvalue')
                 print(f"  [H&A cache: {len(raw)} in-universe, {len(viable_pairs)} pass coint filter]")
             else:
-                # The H&A pool is ONLY valid for the huck2015 (12-month) profile.
-                # Prior code consulted it keyed by bare str(sel_start) for ALL
-                # profiles, silently substituting 12-month sp500 cross-sector pairs
-                # for 2-month core runs (cache-shadow bug). Now we gate it and go
-                # straight to the properly-keyed pool / pair cache.
-                if viable_pairs is None or viable_pairs.empty:
-                    if pool_cache is not None and pool_cache.has(sel_start):
-                        viable_pairs = pool_cache.select(
-                            sel_start, universe_name, SECTOR_MAP,
-                            cross_sector=args.cross_sector,
-                            pvalue=args.pvalue,
-                            return_divergence=args.return_divergence,
-                            log_space=args.log_space,
-                        )
-                        print(f"  [pool HIT for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]")
-                        if args.return_divergence is not None and not viable_pairs.empty:
-                            close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
-                            sel_data = close_prices.loc[str(sel_start):str(sel_end)]
-                            mask = []
-                            for _, row in viable_pairs.iterrows():
-                                t1, t2 = row['pair'].split('-')
-                                if t1 in sel_data.columns and t2 in sel_data.columns:
-                                    r1 = sel_data[t1].iloc[-1] / sel_data[t1].iloc[0] - 1
-                                    r2 = sel_data[t2].iloc[-1] / sel_data[t2].iloc[0] - 1
-                                    mask.append(abs(r1 - r2) <= args.return_divergence)
-                                else:
-                                    mask.append(False)
-                            viable_pairs = viable_pairs[mask]
-                            print(f"  Pool return divergence filter: {viable_pairs.shape[0]} pairs remaining")
+                # A cached window is authoritative, including an empty filtered result.
+                # The live selector is used only when the window key is missing.
+                pool_hit = pool_cache is not None and pool_cache.has(sel_start)
+                if pool_hit:
+                    viable_pairs = pool_cache.select(
+                        sel_start, universe_name, SECTOR_MAP,
+                        cross_sector=args.cross_sector,
+                        pvalue=args.pvalue,
+                        return_divergence=args.return_divergence,
+                        log_space=args.log_space,
+                    )
+                    print(f"  [pool HIT for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]")
+                    if args.return_divergence is not None and not viable_pairs.empty:
+                        close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
+                        sel_data = close_prices.loc[str(sel_start):str(sel_end)]
+                        mask = []
+                        for _, row in viable_pairs.iterrows():
+                            t1, t2 = row['pair'].split('-')
+                            if t1 in sel_data.columns and t2 in sel_data.columns:
+                                r1 = sel_data[t1].iloc[-1] / sel_data[t1].iloc[0] - 1
+                                r2 = sel_data[t2].iloc[-1] / sel_data[t2].iloc[0] - 1
+                                mask.append(abs(r1 - r2) <= args.return_divergence)
+                            else:
+                                mask.append(False)
+                        viable_pairs = viable_pairs[mask]
+                        print(f"  Pool return divergence filter: {viable_pairs.shape[0]} pairs remaining")
+                else:
+                    viable_pairs = selector.select_pairs(
+                        master_df, SECTOR_MAP, str(sel_start), str(sel_end),
+                        same_sector_only=not args.cross_sector,
+                        return_divergence_threshold=args.return_divergence,
+                        log_space=args.log_space,
+                    )
+                    print(f"  [live select_pairs for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]")
 
-                if viable_pairs is None or viable_pairs.empty:
-                    divergence = args.return_divergence or 0.0
-                    filtered_key = (universe_name, str(sel_start), str(sel_end), not args.cross_sector, round(divergence, 4))
-                    viable_pairs = pair_cache.get_filtered(filtered_key)
-                    if viable_pairs is not None:
-                        print(f"  [filtered cache HIT for sel {sel_start} to {sel_end}]")
-                    else:
-                        cache_key = (universe_name, str(sel_start), str(sel_end), not args.cross_sector)
-                        viable_pairs = pair_cache.get(cache_key)
-
-                        # Fallback: if same_sector mode misses, try cross_sector cache
-                        if viable_pairs is None and not args.cross_sector:
-                            fallback_key = (universe_name, str(sel_start), str(sel_end), False)
-                            all_pairs = pair_cache.get(fallback_key)
-                            if all_pairs is not None:
-                                ticker_to_sector = {}
-                                for sector, tickers in SECTOR_MAP.items():
-                                    for t in tickers:
-                                        ticker_to_sector[t] = sector
-                                same_mask = all_pairs['pair'].apply(
-                                    lambda p: ticker_to_sector.get(p.split('-')[0]) == ticker_to_sector.get(p.split('-')[1])
-                                )
-                                viable_pairs = all_pairs[same_mask].copy()
-                                viable_pairs['sector'] = viable_pairs['pair'].apply(
-                                    lambda p: ticker_to_sector.get(p.split('-')[0], 'Unknown')
-                                )
-                                pair_cache.set(cache_key, viable_pairs)
-                                print(f"  [fallback cache HIT (cross to same) for sel {sel_start} to {sel_end}: {len(viable_pairs)} raw pairs]")
-
-                        if viable_pairs is None:
-                            viable_pairs = selector.select_pairs(master_df, SECTOR_MAP, str(sel_start), str(sel_end), same_sector_only=not args.cross_sector, return_divergence_threshold=args.return_divergence, log_space=args.log_space)
-                            pair_cache.set(cache_key, viable_pairs)
-                        else:
-                            # Cache may store all pairs (if seeded); apply filter at load time
-                            viable_pairs = viable_pairs[
-                                (viable_pairs['cointegration_pvalue_log'] < args.pvalue) &
-                                (viable_pairs['half_life_log'] > 0)
-                            ].sort_values('cointegration_pvalue_log')
-                            print(f"  [cache HIT for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs after filter]")
-
-                        if args.return_divergence is not None and not viable_pairs.empty:
-                            close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
-                            sel_data = close_prices.loc[str(sel_start):str(sel_end)]
-                            mask = []
-                            for _, row in viable_pairs.iterrows():
-                                t1, t2 = row['pair'].split('-')
-                                if t1 in sel_data.columns and t2 in sel_data.columns:
-                                    r1 = sel_data[t1].iloc[-1] / sel_data[t1].iloc[0] - 1
-                                    r2 = sel_data[t2].iloc[-1] / sel_data[t2].iloc[0] - 1
-                                    mask.append(abs(r1 - r2) <= args.return_divergence)
-                                else:
-                                    mask.append(False)
-                            viable_pairs = viable_pairs[mask]
-                            print(f"  Return divergence filter: {viable_pairs.shape[0]} pairs remaining")
-
-                        pair_cache.set_filtered(filtered_key, viable_pairs)
+            active_log_space = False if args.profile == 'huck2015' else args.log_space
+            before_half_life_filter = len(viable_pairs)
+            viable_pairs = filter_pairs_by_half_life(viable_pairs, log_space=active_log_space)
+            removed_half_life = before_half_life_filter - len(viable_pairs)
+            if removed_half_life:
+                print(
+                    f"  Half-life filter ({'log' if active_log_space else 'raw'} space): "
+                    f"removed {removed_half_life} invalid pairs"
+                )
 
             if viable_pairs.empty:
                 print(f"No viable pairs found for fold {i}")
+                close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
+                zero_dates = [
+                    pd.Timestamp(dt).date()
+                    for dt in close_prices.loc[str(test_start):str(test_end)].index
+                ]
+                fold_summaries.append({
+                    'fold': i,
+                    'start': test_start,
+                    'end': test_end,
+                    'sharpe': 0.0,
+                    'trades': 0,
+                    'pairs': 0,
+                })
+                all_daily_returns.extend(
+                    {'date': dt, 'pnl_pct': 0.0, 'fold_id': i}
+                    for dt in zero_dates
+                )
+                all_daily_active_counts.extend(
+                    {'date': dt, 'count': 0, 'deployed_capital': 0.0, 'fold_id': i}
+                    for dt in zero_dates
+                )
+                print(f"Fold {i} Complete: Sharpe=0.00, Trades=0, Rejected=0")
                 continue
 
             # Pre-filter pairs: ensure both tickers have sufficient test-window data
@@ -398,6 +414,8 @@ def run_backtest():
             # 4. Setup Backtest
             cerebro = bt.Cerebro()
             cerebro.broker.setcash(args.initial_cash)
+            if args.broker_leverage != 1.0:
+                cerebro.broker.setcommission(leverage=args.broker_leverage)
             cerebro.broker.set_coc(True)
             
             is_stats = {}
@@ -484,7 +502,13 @@ def run_backtest():
                 equity_fraction=args.pct_per_pair,
                 verbose=args.verbose,
                 earnings_screen=earnings_screen,
-                earnings_block_days=args.earnings_block_days
+                earnings_block_days=args.earnings_block_days,
+                margin_behavior=args.margin_behavior,
+                margin_long=args.margin_long,
+                margin_short=args.margin_short,
+                maintenance_long=args.maintenance_long,
+                maintenance_short=args.maintenance_short,
+                margin_rates=args.margin_rates_dict,
             )
         
         cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe', timeframe=bt.TimeFrame.Days, riskfreerate=0.0)
@@ -515,6 +539,10 @@ def run_backtest():
         for rec in getattr(res, 'rejected_orders', []):
             rec['fold_id'] = i
             all_rejected_orders.append(rec)
+
+        for rec in getattr(res, 'daily_margin', []):
+            rec['fold_id'] = i
+            all_daily_margin.append(rec)
         
         for log in logs:
             log['fold_id'] = i
@@ -534,9 +562,13 @@ def run_backtest():
 
         if all_rejected_orders:
             pd.DataFrame(all_rejected_orders).to_csv(os.path.join(args.output, "rejected_orders.csv"), index=False)
+
+        if all_daily_margin:
+            pd.DataFrame(all_daily_margin).to_csv(os.path.join(args.output, "daily_margin.csv"), index=False)
             
         if all_daily_returns:
             returns_df = pd.DataFrame(all_daily_returns)
+            returns_df['date'] = pd.to_datetime(returns_df['date'])
             cash = args.initial_cash
             cost_rate = args.spy_cost_bps / 10000
 
@@ -544,6 +576,7 @@ def run_backtest():
             deployed_lookup = {}
             if args.market_invest and all_daily_active_counts:
                 at_df = pd.DataFrame(all_daily_active_counts)
+                at_df['date'] = pd.to_datetime(at_df['date'])
                 for fold_id, grp in at_df.groupby('fold_id'):
                     grp = grp.sort_values('date')
                     deployed_lookup[fold_id] = dict(zip(grp['date'], grp['deployed_capital']))
@@ -609,6 +642,7 @@ def run_backtest():
             daily_df.columns = [c.lower() for c in daily_df.columns]
             daily_df.to_csv(os.path.join(args.output, "daily_returns.csv"), index=False)
 
+            untrimmed_daily_ret_series = daily_ret_series.copy()
             total_days = len(daily_ret_series)
 
             # Trim edges where not all overlapping portfolios are active
@@ -623,9 +657,21 @@ def run_backtest():
                     print(f"  Trimmed {trim_months}m from each end: {daily_dates[0].date()}..{daily_dates[-1].date()} → "
                           f"{daily_ret_series.index[0].date()}..{daily_ret_series.index[-1].date()} ({total_days} days)")
 
+            # A run containing only zero-pair folds has no overlapping portfolio
+            # edges to trim. Keep its zero-return dates so it remains valid.
+            if (
+                total_days == 0
+                and len(untrimmed_daily_ret_series) > 0
+                and np.allclose(untrimmed_daily_ret_series.to_numpy(dtype=float), 0.0)
+            ):
+                daily_ret_series = untrimmed_daily_ret_series
+                total_days = len(daily_ret_series)
+                print(f"  Retained zero-return dates after empty overlap trim ({total_days} days)")
+
             # Method 3: active-only daily returns (for Fama-French regression)
             if all_daily_active_counts:
                 at_df = pd.DataFrame(all_daily_active_counts)
+                at_df['date'] = pd.to_datetime(at_df['date'])
                 active_counts = at_df.groupby('date')['count'].sum()
                 active_dates = active_counts[active_counts > 0].index
                 active_df = daily_df[daily_df['date'].isin(active_dates)].copy()
@@ -679,6 +725,7 @@ def run_backtest():
                     'pvalue': float(args.pvalue),
                     'pct_per_pair': float(args.pct_per_pair),
                     'max_pairs': int(args.max_pairs),
+                    'broker_leverage': float(args.broker_leverage),
                     'log_space': bool(args.log_space),
                     'dollar_neutral': bool(args.dollar_neutral),
                     'total_folds': int(len(fold_summaries)),
@@ -689,14 +736,26 @@ def run_backtest():
                     'total_days': int(total_days),
                     'days_active_lt10': int(total_lt10),
                 }
+                metrics['margin_behavior'] = str(args.margin_behavior)
+                metrics['margin_long'] = float(args.margin_long)
+                metrics['margin_short'] = float(args.margin_short)
+                if price_snapshot:
+                    metrics['price_snapshot'] = price_snapshot['path']
+                    metrics['price_snapshot_sha256'] = price_snapshot['sha256']
+                    metrics['price_snapshot_mode'] = price_snapshot['mode']
+                margin_rejections = sum(1 for r in all_rejected_orders if r.get('reason') == 'margin')
+                metrics['margin_rejections'] = int(margin_rejections)
+                if all_daily_margin:
+                    dm = pd.DataFrame(all_daily_margin)
+                    metrics['margin_call_days'] = int(dm['margin_call'].sum())
+                    metrics['max_utilization'] = float(round(dm['utilization'].max(), 4))
+                    metrics['min_free_margin'] = float(round(dm['free_margin'].min(), 2))
                 with open(os.path.join(args.output, 'metrics.json'), 'w') as f:
                     json.dump(metrics, f, indent=2)
             else:
                 print("\nBacktest finished with no daily returns recorded.")
     else:
         print("\nBacktest finished with no results.")
-
-    pair_cache.save()
 
 if __name__ == "__main__":
     run_backtest()

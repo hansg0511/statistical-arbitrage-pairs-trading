@@ -1,7 +1,7 @@
 """Consolidated shared-account combined backtest (mechanisms A and B).
 
 Replays the two pct=0.25 leg backtests' *trade events* (trade log + per-trade
-daily marks) into a single capital account. Each leg keeps its own native
+daily marks) from the fixed sweep into a single capital account. Each leg keeps its own native
 walk-forward grid, universe, and per-fold capital; the combination happens at
 the trade-event level.
 
@@ -20,7 +20,7 @@ Momentum weights (causal: trailing 63d Sharpe strictly before each month,
 
   Mechanism B (entry-flow, let-drift):
     fold_capital is locked at fold start = C(fold_start) / n_active_L(start)
-    (an equal slice of the book, no weight); each new entry is sized
+    (an equal slice of that leg's book, no weight); each new entry is sized
     pct * w_L(entry month) * fold_capital and rides to its logged exit.
     No monthly re-tilt; the leg split drifts with realized returns.
 
@@ -40,27 +40,30 @@ import pandas as pd
 import numpy as np
 
 BASE = 'fixed_diagnosis'
-PCT25 = os.path.join(BASE, '_pct25')
+PCT25 = os.path.join(BASE, '_sweep_pct25')
 OUT = os.path.join(BASE, '_combined', 'consolidated')
 
 LEGS = {
     'recent': {
-        'A': ('2023-11-01_cross_sector_slide3m_bd7', 'core-2m cross3m bd7'),
-        'B': ('2023-01-01_cross_sector_slide1m_noscreen', 'sp500-12m cross1m noscreen'),
+        'A': ('_sweep_pct25/10b/2023-01-01_cross_sector_slide1m_noscreen',
+              'sp500-12m cross1m noscreen'),
+        'B': ('_sweep_pct25/07/2023-11-01_cross_sector_slide3m_bd7',
+              'sp500-2m cross3m bd7'),
     },
     'historical': {
-        'A': ('2014-11-01_cross_sector_slide3m_bd7', 'core-2m cross3m bd7'),
-        'B': ('2014-01-01_cross_sector_slide1m_noscreen', 'sp500-12m cross1m noscreen'),
+        'A': ('_sweep_pct25/09b/2014-01-01_cross_sector_slide1m_noscreen',
+              'sp500-12m cross1m noscreen'),
+        'B': ('_sweep_pct25/09a/2014-11-01_cross_sector_slide3m_bd7',
+              'sp500-2m cross3m bd7'),
     },
 }
 
 
 # --------------------------------------------------------------------------
-# Loading helpers (take a run directory or the flat _pct25 config name)
+# Loading helpers (take a fixed-sweep run directory or a legacy-style config name)
 # --------------------------------------------------------------------------
 def _run_dir(cfg_or_dir):
-    """Accept either a bare pct25 config name ('2023-11-01_x') or a relative
-    run directory ('_sweep_pct25/06/2023-11-01_x')."""
+    """Accept either a bare config name or a fixed-sweep relative run directory."""
     if os.sep in cfg_or_dir or cfg_or_dir.startswith('_'):
         return os.path.join(BASE, cfg_or_dir)
     return os.path.join(PCT25, cfg_or_dir)
@@ -271,14 +274,14 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
             if key not in active_by_day[d]:
                 sub['basis'] = None
 
-    # --- mechanism B: lock fold basis at fold start (equal slice of the book) ---
+    # --- mechanism B: lock fold basis at fold start (equal slice of that leg) ---
     def activate_fold_b(leg, fid, d):
         sub = subs[(leg, fid)]
         if sub['basis'] is not None:
             return
         C = total_value()
-        n_total = len(active_by_day[d])
-        fc = C / n_total if n_total else 0.0
+        n_active_leg = sum(1 for key in active_by_day[d] if key[0] == leg)
+        fc = C / n_active_leg if n_active_leg else 0.0
         sub['basis'] = fc
 
     entries_by_date = {}
