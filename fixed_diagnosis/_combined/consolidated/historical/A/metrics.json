@@ -1,0 +1,12 @@
+{
+  "ann_ret": 0.08078351044392673,
+  "ann_vol": 0.07038157659670141,
+  "sharpe": 1.1388109709584442,
+  "mdd": -0.05134037090754684,
+  "window": "historical",
+  "mechanism": "A",
+  "capital": 1000000.0,
+  "pct_per_pair": 0.25,
+  "n_days": 1258,
+  "rejected_entries": 0
+}

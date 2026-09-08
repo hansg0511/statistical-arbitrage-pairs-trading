@@ -1,0 +1,7 @@
+param,mech,recent,hist,joined,score_rank,rank_avg_rank,joined_rank
+lookback,A,0.827,1.165,1.057,1,22,1
+lookback,B,0.819,1.119,1.021,2,18,1
+lookback,A,0.826,1.139,1.043,1,17,1
+lookback,B,0.817,1.094,1.007,2,16,1
+lookback,A,0.835,1.078,1.002,2,20,1
+lookback,B,0.826,1.038,0.971,2,17,1
