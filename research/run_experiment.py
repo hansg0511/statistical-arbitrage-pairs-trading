@@ -1,12 +1,17 @@
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import backtrader as bt
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import warnings
+
+if __package__ in {None, ""}:  # Support both `python research/...` and `python -m ...`.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from research.cli import parse_args
 from src.constants import TICKERS_CORE, TICKERS_SP500, SECTOR_MAP_CORE, SECTOR_MAP_SP500
@@ -197,7 +202,7 @@ def _process_fold_coint(i, fold, g):
             pvalue=args.pvalue,
             log_space=args.log_space,
         )
-        if args.return_divergence is not None and not pool_cache.divergence_applied:
+        if not pool_cache.divergence_matches(args.return_divergence):
             close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
             viable_pairs = filter_pairs_by_return_divergence(
                 viable_pairs, close_prices, str(sel_start), str(sel_end), args.return_divergence

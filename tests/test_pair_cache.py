@@ -1,5 +1,3 @@
-import pickle
-
 import pandas as pd
 import pytest
 
@@ -37,7 +35,9 @@ def _pool_frame():
 
 def test_pool_hit_is_deterministic_and_respects_sector_filter(tmp_path):
     path = tmp_path / "pool.pkl"
-    cache = PoolCache(path, {"return_divergence_applied": True})
+    cache = PoolCache(
+        path, {"return_divergence_applied": True, "return_divergence": 0.10}
+    )
     cache.set("2020-01-01", _pool_frame())
     cache.save()
 
@@ -48,6 +48,8 @@ def test_pool_hit_is_deterministic_and_respects_sector_filter(tmp_path):
     assert cross["pair"].tolist() == ["AAA-BBB", "AAA-CCC"]
     assert same["pair"].tolist() == ["AAA-BBB"]
     assert loaded.divergence_applied
+    assert loaded.divergence_matches(0.10)
+    assert not loaded.divergence_matches(0.05)
 
 
 def test_return_divergence_filter_is_explicit():

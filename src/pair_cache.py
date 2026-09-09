@@ -112,6 +112,17 @@ class PoolCache:
         """Whether the builder already applied return-divergence filtering."""
         return bool(self.metadata.get("return_divergence_applied", False))
 
+    @property
+    def divergence_threshold(self) -> Optional[float]:
+        value = self.metadata.get("return_divergence")
+        return float(value) if value is not None else None
+
+    def divergence_matches(self, threshold: Optional[float]) -> bool:
+        """Return whether this pool was filtered at the requested threshold."""
+        if threshold is None:
+            return True
+        return self.divergence_applied and self.divergence_threshold == float(threshold)
+
     def get_pool(self, sel_start: Any) -> Optional[pd.DataFrame]:
         frame = self._data.get(str(sel_start))
         return frame.copy() if frame is not None else None
