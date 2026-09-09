@@ -64,6 +64,20 @@
     "slippage": null,
     "transaction_costs": null
   },
+  "event_replay": {
+    "input_root": "fixed_diagnosis/_sweep_pct25",
+    "output_root": "results/final/combined",
+    "windows": {
+      "recent": {
+        "A": "10b/2023-01-01_cross_sector_slide1m_noscreen",
+        "B": "07/2023-11-01_cross_sector_slide3m_bd7"
+      },
+      "historical": {
+        "A": "09b/2014-01-01_cross_sector_slide1m_noscreen",
+        "B": "09a/2014-11-01_cross_sector_slide3m_bd7"
+      }
+    }
+  },
   "provenance": {
     "active_report": "RESEARCH_PIPELINE_FIXED.md",
     "ranking_report": "fixed_diagnosis/clean40/_CLEAN40_PAIR_RANKS.md",

@@ -10,8 +10,8 @@ the other; net cash ~ 0), matching the engine, which never rejects on cash in
 these runs. The fold's cash therefore only moves by realized PnL, and "deployed"
 = gross notional outstanding.
 
-Momentum weights (causal: trailing 63d Sharpe strictly before each month,
-+/-10% step, clamp [0.25, 0.75]) set the capital split between the two legs.
+Momentum weights are causal: trailing lookback Sharpe is evaluated strictly
+before each month and the configured step and bounds set the capital split.
 
   Mechanism A (monthly re-weight of fold capital):
     each month, every active fold of leg L is re-funded to
@@ -29,44 +29,49 @@ exits (signal / stop / guard / max_holding / session_end).
 
 Usage:
   python research/run_combined_backtest.py [--window recent|historical]
-      [--mechanism A|B|both] [--capital 1000000] [--pct-per-pair 0.25]
-      [--lookback 63] [--step 0.10] [--clamp 0.25 0.75]
+      [--mechanism A|B|both] [--config research/selected_book_config.json]
 """
 import os
 import math
 import json
 import argparse
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
-BASE = 'fixed_diagnosis'
-PCT25 = os.path.join(BASE, '_sweep_pct25')
-OUT = os.path.join(BASE, '_combined', 'consolidated')
+DEFAULT_CONFIG = Path(__file__).with_name('selected_book_config.json')
 
-LEGS = {
-    'recent': {
-        'A': ('_sweep_pct25/10b/2023-01-01_cross_sector_slide1m_noscreen',
-              'sp500-12m cross1m noscreen'),
-        'B': ('_sweep_pct25/07/2023-11-01_cross_sector_slide3m_bd7',
-              'sp500-2m cross3m bd7'),
-    },
-    'historical': {
-        'A': ('_sweep_pct25/09b/2014-01-01_cross_sector_slide1m_noscreen',
-              'sp500-12m cross1m noscreen'),
-        'B': ('_sweep_pct25/09a/2014-11-01_cross_sector_slide3m_bd7',
-              'sp500-2m cross3m bd7'),
-    },
-}
+
+def load_selected_book_config(path=DEFAULT_CONFIG):
+    """Load and validate the locked book configuration."""
+    with open(path, encoding='utf-8') as handle:
+        config = json.load(handle)
+    if config.get('status') != 'locked':
+        raise ValueError(f'selected book config is not locked: {path}')
+    for key in ('pair', 'momentum', 'book', 'event_replay'):
+        if key not in config:
+            raise ValueError(f'selected book config is missing {key!r}: {path}')
+    return config
+
+
+def leg_specs(config, window):
+    """Resolve configured relative fixed-sweep run directories."""
+    root = config['event_replay']['input_root']
+    windows = config['event_replay']['windows']
+    if window not in windows:
+        raise ValueError(f'unknown event-replay window: {window}')
+    return {
+        leg: (os.path.join(root, relative_path), leg)
+        for leg, relative_path in windows[window].items()
+    }
 
 
 # --------------------------------------------------------------------------
 # Loading helpers (take a fixed-sweep run directory or a legacy-style config name)
 # --------------------------------------------------------------------------
 def _run_dir(cfg_or_dir):
-    """Accept either a bare config name or a fixed-sweep relative run directory."""
-    if os.sep in cfg_or_dir or cfg_or_dir.startswith('_'):
-        return os.path.join(BASE, cfg_or_dir)
-    return os.path.join(PCT25, cfg_or_dir)
+    """Accept a configured relative run directory or an absolute path."""
+    return os.fspath(cfg_or_dir)
 
 
 def load_ret(cfg_or_dir):
@@ -90,7 +95,7 @@ def load_folds(cfg_or_dir):
 
 
 # --------------------------------------------------------------------------
-# Weight path (causal: trailing 63d Sharpe strictly before each month)
+# Weight path (causal: trailing configured Sharpe strictly before each month)
 # --------------------------------------------------------------------------
 def _sharpe(x):
     x = x.dropna()
@@ -412,17 +417,28 @@ def write_outputs(out_dir, rows, ledger, rejected, trade_rows, weight_path, m):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--config', default=str(DEFAULT_CONFIG))
     ap.add_argument('--window', default='recent', choices=['recent', 'historical'])
     ap.add_argument('--mechanism', default='both', choices=['A', 'B', 'both'])
-    ap.add_argument('--capital', type=float, default=1_000_000.0)
-    ap.add_argument('--pct-per-pair', type=float, default=0.25)
-    ap.add_argument('--lookback', type=int, default=63)
-    ap.add_argument('--step', type=float, default=0.10)
-    ap.add_argument('--clamp', type=float, nargs=2, default=[0.25, 0.75])
-    ap.add_argument('--out', default=OUT)
+    ap.add_argument('--capital', type=float)
+    ap.add_argument('--pct-per-pair', type=float)
+    ap.add_argument('--lookback', type=int)
+    ap.add_argument('--step', type=float)
+    ap.add_argument('--clamp', type=float, nargs=2)
+    ap.add_argument('--out')
     args = ap.parse_args()
 
-    leg_specs = LEGS[args.window]
+    config = load_selected_book_config(args.config)
+    momentum = config['momentum']
+    bounds = momentum['weight_bounds']
+    capital = args.capital if args.capital is not None else config['book']['initial_capital']
+    pct = args.pct_per_pair if args.pct_per_pair is not None else config['book']['pct_per_pair']
+    lookback = args.lookback if args.lookback is not None else momentum['lookback_days']
+    step = args.step if args.step is not None else momentum['step']
+    clamp = args.clamp if args.clamp is not None else [bounds['min'], bounds['max']]
+    output_root = args.out or config['event_replay']['output_root']
+
+    leg_specs = leg_specs(config, args.window)
     leg_data = {}
     leg_rets = {}
     for L, (cfg, label) in leg_specs.items():
@@ -432,21 +448,23 @@ def main():
 
     wp = weight_path_momentum_causal(
         leg_rets['A'], leg_rets['B'],
-        lookback=args.lookback, step=args.step,
-        wmin=args.clamp[0], wmax=args.clamp[1],
+        lookback=lookback, step=step,
+        wmin=clamp[0], wmax=clamp[1],
     )
 
     mechanisms = ['A', 'B'] if args.mechanism == 'both' else [args.mechanism]
     for mech in mechanisms:
         rows, ledger, rejected, trade_rows = simulate(
             leg_data, wp, mech,
-            capital=args.capital, pct=args.pct_per_pair,
+            capital=capital, pct=pct,
         )
         m = metrics(pd.Series([r['daily_return'] for r in rows]))
-        m.update({'window': args.window, 'mechanism': mech, 'capital': args.capital,
-                  'pct_per_pair': args.pct_per_pair, 'n_days': len(rows),
+        m.update({'window': args.window, 'mechanism': mech, 'capital': capital,
+                  'pct_per_pair': pct, 'lookback_days': lookback, 'step': step,
+                  'weight_min': clamp[0], 'weight_max': clamp[1],
+                  'config': os.path.abspath(args.config), 'n_days': len(rows),
                   'rejected_entries': len(rejected)})
-        out_dir = os.path.join(args.out, args.window, mech)
+        out_dir = os.path.join(output_root, args.window, mech)
         write_outputs(out_dir, rows, ledger, rejected, trade_rows, wp, m)
         print(f"[{args.window} {mech}] sharpe={m['sharpe']:.4f} ann_ret={m['ann_ret']*100:.2f}% "
               f"vol={m['ann_vol']*100:.2f}% mdd={m['mdd']*100:.1f}% rejected={len(rejected)} -> {out_dir}")
