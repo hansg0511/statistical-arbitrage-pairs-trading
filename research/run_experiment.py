@@ -1,27 +1,21 @@
 import argparse
 import json
 import os
-import pickle
-import sys
 import pandas as pd
 import numpy as np
 import backtrader as bt
 import traceback
-from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import warnings
 
-from run_backtest import parse_args, _merge_profile
+from research.cli import parse_args
 from src.constants import TICKERS_CORE, TICKERS_SP500, SECTOR_MAP_CORE, SECTOR_MAP_SP500
 from src.data_loader import DataLoader, load_or_fetch_prices
 from src.walk_forward import FoldBuilder
 from src.pair_selection import PairSelector
 from src.backtest import PairTradingStrategy, ZScoreData, prepare_backtest_data
-from src.gatev_selection import GatevSelector
-from src.gatev_strategy import GatevStrategy, GatevData, prepare_gatev_data
-from src.pair_cache import PoolCache, filter_pairs_by_half_life
+from src.pair_cache import PoolCache, filter_pairs_by_half_life, filter_pairs_by_return_divergence
 from src.earnings_screen import EarningsScreen
-from src.config import MARGIN_SETTINGS
 
 warnings.filterwarnings('ignore')
 
@@ -73,16 +67,12 @@ def _worker_init(master_df, args_dict, TICKERS, SECTOR_MAP, universe_name, pool_
     _global['SECTOR_MAP'] = SECTOR_MAP
     _global['universe_name'] = universe_name
     _global['pair_selector'] = PairSelector(pvalue_threshold=args_dict['pvalue'])
-    _global['pool_cache'] = PoolCache(pool_path, prefiltered=(pool_path is not None and pool_path.endswith('core_2m.pkl'))) if pool_path else None
+    _global['pool_cache'] = PoolCache(pool_path) if pool_path else None
     _global['earnings_screen'] = earnings_screen
-    # huck2015 profile (12m) reads the pool directly, keyed by bare sel_start.
-    _global['huck_cache'] = _global['pool_cache']._data if (args_dict.get('sel_months') == 12 and _global['pool_cache']) else None
+    _global['universe_name'] = universe_name
 
 def _process_fold(i, fold):
-    g = _global
-    if g['args'].mode == 'gatev':
-        return _process_fold_gatev(i, fold, g)
-    return _process_fold_coint(i, fold, g)
+    return _process_fold_coint(i, fold, _global)
 
 def _collect_results(cerebro, i, test_start, test_end, output_lines,
                      n_pairs=0, selected_pairs=None):
@@ -181,80 +171,6 @@ def _collect_zero_pair_fold(master_df, i, test_start, test_end, output_lines):
         [], [], [], [], [], output_lines,
     )
 
-def _process_fold_gatev(i, fold, g):
-    master_df = g['master_df']
-    args = g['args']
-    TICKERS = g['TICKERS']
-
-    sel_start, sel_end, _, _, test_start, test_end = fold
-    output_lines = []
-    output_lines.append(f"\n--- Processing Fold {i} [Test: {test_start} to {test_end}] ---")
-
-    close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
-    sel_window_data = close_prices.loc[str(sel_start):str(sel_end)]
-    valid_tickers = sorted([t for t in close_prices.columns if t in TICKERS and sel_window_data[t].notna().sum() > 20])
-
-    gsel = GatevSelector(top_k=args.max_pairs)
-    top_pairs = gsel.select_pairs(close_prices[valid_tickers], str(sel_start), str(sel_end))
-
-    if top_pairs.empty:
-        output_lines.append(f"No Gatev pairs found for fold {i}")
-        return (None, [], [], [], [], [], [], [], [], output_lines)
-
-    output_lines.append(f"Selected {len(top_pairs)} pairs: {', '.join(top_pairs['pair'].tolist())}")
-
-    cerebro = bt.Cerebro()
-    cerebro.broker.setcash(args.initial_cash)
-    if args.broker_leverage != 1.0:
-        cerebro.broker.setcommission(leverage=args.broker_leverage)
-    cerebro.broker.set_coc(True)
-    data_count = 0
-
-    for _, row in top_pairs.iterrows():
-        t1, t2 = row['pair'].split('-')
-        if isinstance(master_df.columns, pd.MultiIndex):
-            s1_close = master_df['Close'][t1]
-            s2_close = master_df['Close'][t2]
-        else:
-            s1_close = master_df[t1]
-            s2_close = master_df[t2]
-
-        bt_data = prepare_gatev_data(
-            s1_close, s2_close,
-            str(sel_start), str(sel_end),
-            str(test_start), str(test_end),
-        )
-
-        if bt_data['dateIndex'].empty:
-            continue
-
-        df1 = pd.DataFrame(index=bt_data['dateIndex'])
-        df1['close'] = s1_close.loc[bt_data['dateIndex']]
-        df1['zscore'] = bt_data['zscore']
-
-        df2 = s2_close.loc[df1.index].to_frame(name='close')
-
-        data0 = GatevData(dataname=df1, name=t1)
-        data1 = bt.feeds.PandasData(dataname=df2, name=t2)
-        cerebro.adddata(data0)
-        cerebro.adddata(data1)
-        data_count += 1
-
-    if data_count == 0:
-        output_lines.append(f"No valid Gatev data for fold {i}")
-        return (None, [], [], [], [], [], [], [], [], output_lines)
-
-    cerebro.addstrategy(
-        GatevStrategy,
-        entry_z=args.entry_z,
-        exit_z=args.exit_z,
-        equity_fraction=args.pct_per_pair,
-        initial_cash=args.initial_cash,
-    )
-
-    return _collect_results(cerebro, i, test_start, test_end, output_lines, len(top_pairs))
-
-
 def _process_fold_coint(i, fold, g):
     master_df = g['master_df']
     args = g['args']
@@ -262,7 +178,6 @@ def _process_fold_coint(i, fold, g):
     SECTOR_MAP = g['SECTOR_MAP']
     universe_name = g['universe_name']
     selector = g['pair_selector']
-    huck_cache = g['huck_cache']
     pool_cache = g['pool_cache']
     earnings_screen = g['earnings_screen']
 
@@ -272,44 +187,37 @@ def _process_fold_coint(i, fold, g):
 
     viable_pairs = None
 
-    # ==== COINTEGRATION PIPELINE ====
-    if args.profile == 'huck2015':
-        sel_key = str(sel_start)
-        raw = huck_cache.get(sel_key, pd.DataFrame()) if huck_cache else pd.DataFrame()
-        ticker_set = set(TICKERS)
-        universe_mask = raw['pair'].apply(lambda p: all(t in ticker_set for t in p.split('-')))
-        raw = raw[universe_mask]
-        mask = (raw['cointegration_pvalue'] < args.pvalue) & (raw['half_life'] > 0)
-        viable_pairs = raw[mask].sort_values('cointegration_pvalue')
-        output_lines.append(f"  [H&A cache: {len(raw)} in-universe, {len(viable_pairs)} pass coint filter]")
+    # A cached window is authoritative, including an empty filtered result.
+    # Live selection is used only when the requested window is not cached.
+    pool_hit = pool_cache is not None and pool_cache.has(sel_start)
+    if pool_hit:
+        viable_pairs = pool_cache.select(
+            sel_start, universe_name, SECTOR_MAP,
+            cross_sector=args.cross_sector,
+            pvalue=args.pvalue,
+            log_space=args.log_space,
+        )
+        if args.return_divergence is not None and not pool_cache.divergence_applied:
+            close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
+            viable_pairs = filter_pairs_by_return_divergence(
+                viable_pairs, close_prices, str(sel_start), str(sel_end), args.return_divergence
+            )
+        output_lines.append(
+            f"  [pool {os.path.basename(pool_cache.path)} HIT for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]"
+        )
     else:
-        # A cached window is authoritative, including an empty filtered result.
-        # The live selector is used only when the window key is missing.
-        pool_hit = pool_cache is not None and pool_cache.has(sel_start)
-        if pool_hit:
-            viable_pairs = pool_cache.select(
-                sel_start, universe_name, SECTOR_MAP,
-                cross_sector=args.cross_sector,
-                pvalue=args.pvalue,
-                return_divergence=args.return_divergence,
-                log_space=args.log_space,
-            )
-            output_lines.append(
-                f"  [pool {os.path.basename(pool_cache.path)} HIT for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]"
-            )
-        else:
-            viable_pairs = selector.select_pairs(
-                master_df, SECTOR_MAP, str(sel_start), str(sel_end),
-                same_sector_only=not args.cross_sector,
-                return_divergence_threshold=args.return_divergence,
-                log_space=args.log_space
-            )
-            output_lines.append(f"  [live select_pairs for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]")
+        viable_pairs = selector.select_pairs(
+            master_df, SECTOR_MAP, str(sel_start), str(sel_end),
+            same_sector_only=not args.cross_sector,
+            return_divergence_threshold=args.return_divergence,
+            log_space=args.log_space
+        )
+        output_lines.append(f"  [live select_pairs for sel {sel_start} to {sel_end}: {len(viable_pairs)} pairs]")
 
     # Cache routes can contain rows produced in a different price space or
     # before the half-life validity filter was applied. Validate once more
     # before the max_pairs * 3 candidate window is taken below.
-    active_log_space = False if args.profile == 'huck2015' else args.log_space
+    active_log_space = args.log_space
     before_half_life_filter = len(viable_pairs)
     viable_pairs = filter_pairs_by_half_life(viable_pairs, log_space=active_log_space)
     removed_half_life = before_half_life_filter - len(viable_pairs)
@@ -362,12 +270,9 @@ def _process_fold_coint(i, fold, g):
         pair_name = row['pair']
         t1, t2 = pair_name.split('-')
 
-        if args.profile == 'huck2015':
-            hl_col, hr_col, intercept_col = 'half_life', 'hedge_ratio', 'intercept'
-        else:
-            hl_col = 'half_life_log' if args.log_space else 'half_life'
-            hr_col = 'hedge_ratio_log' if args.log_space else 'hedge_ratio'
-            intercept_col = 'intercept_log' if args.log_space else 'intercept'
+        hl_col = 'half_life_log' if args.log_space else 'half_life'
+        hr_col = 'hedge_ratio_log' if args.log_space else 'hedge_ratio'
+        intercept_col = 'intercept_log' if args.log_space else 'intercept'
 
         hl = row[hl_col]
         hr = row[hr_col]
@@ -464,10 +369,67 @@ def _process_fold_coint(i, fold, g):
     )
 
 
-def run_backtest_parallel():
-    args = parse_args()
-    if args.mode == 'coint':
-        _merge_profile(args)
+def execute_folds(master_df, args, tickers, sector_map, universe_name,
+                  pool_path, earnings_screen, folds, workers):
+    """Run the same fold function serially or in worker processes.
+
+    Keeping the fold callable and result contract identical is what makes the
+    ``--workers 1`` and ``--workers N`` paths directly comparable.
+    """
+    args_dict = vars(args).copy()
+    output = {}
+    failed = []
+
+    def record(index, fold, result=None, error=None):
+        if error is not None:
+            failed.append(index)
+            output[index] = [
+                f"\n--- Processing Fold {index} ---",
+                f"  ERROR: {error}",
+                traceback.format_exc(),
+            ]
+        else:
+            output[index] = result
+
+    n_workers = max(1, min(int(workers), os.cpu_count() or 1))
+    if n_workers == 1:
+        _worker_init(
+            master_df, args_dict, tickers, sector_map, universe_name,
+            pool_path, earnings_screen,
+        )
+        for index, fold in enumerate(folds):
+            try:
+                record(index, fold, result=_process_fold(index, fold))
+            except Exception as exc:
+                record(index, fold, error=exc)
+        return output, failed
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_worker_init,
+        initargs=(master_df, args_dict, tickers, sector_map, universe_name,
+                  pool_path, earnings_screen),
+    ) as executor:
+        futures = {
+            executor.submit(_process_fold, index, fold): index
+            for index, fold in enumerate(folds)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                record(index, None, result=future.result())
+            except Exception as exc:
+                failed.append(index)
+                output[index] = [
+                    f"\n--- Processing Fold {index} ---",
+                    f"  ERROR: {exc}",
+                    traceback.format_exc(),
+                ]
+    return output, failed
+
+
+def run_experiment(argv=None):
+    args = parse_args(argv)
 
     import json as _json
     args.margin_rates_dict = {}
@@ -475,39 +437,28 @@ def run_backtest_parallel():
         with open(args.margin_rates) as f:
             args.margin_rates_dict = _json.load(f)
 
-    universe_name = 'core'
-    if args.profile in __import__('src.config', fromlist=['PROFILES']).PROFILES:
-        universe_name = __import__('src.config', fromlist=['PROFILES']).PROFILES[args.profile].get('universe', 'sp500')
+    universe_name = args.universe
     if universe_name == 'core':
         TICKERS = TICKERS_CORE
         SECTOR_MAP = SECTOR_MAP_CORE
     else:
         TICKERS = TICKERS_SP500
         SECTOR_MAP = SECTOR_MAP_SP500
-    if args.universe:
-        universe_name = args.universe
-        if universe_name == 'core':
-            TICKERS = TICKERS_CORE
-            SECTOR_MAP = SECTOR_MAP_CORE
-        else:
-            TICKERS = TICKERS_SP500
-            SECTOR_MAP = SECTOR_MAP_SP500
-
     os.makedirs(args.output, exist_ok=True)
     trade_logs_dir = os.path.join(args.output, "trade_logs")
     os.makedirs(trade_logs_dir, exist_ok=True)
     _clear_run_outputs(args.output, trade_logs_dir)
     _write_run_status(args.output, 'running')
 
-    # Resolve the universe-free window-keyed pool for this run.
+    # Resolve the window-keyed pool for this run. Missing pools intentionally
+    # fall back to deterministic live selection; an existing corrupt pool fails.
     from src.config import pool_path_for
-    pool_path = pool_path_for(args.sel_months, universe_name, args.cross_sector, args.profile) if args.mode == 'coint' else None
+    pool_path = args.pool_path or pool_path_for(args.sel_months, universe_name)
+    if not os.path.isfile(pool_path):
+        pool_path = None
 
-    print(f"Starting Walk-Forward Backtest (Parallel) from {args.start} to {args.end}")
-    if args.mode == 'gatev':
-        print(f"Strategy: EntryZ={args.entry_z}, ExitZ={args.exit_z}")
-    else:
-        print(f"Strategy: EntryZ={args.entry_z}, ExitZ={args.exit_z}, StopZ={args.stop_z}")
+    print(f"Starting Walk-Forward Experiment from {args.start} to {args.end}")
+    print(f"Strategy: EntryZ={args.entry_z}, ExitZ={args.exit_z}, StopZ={args.stop_z}")
 
     loader = DataLoader(TICKERS, start=args.start, end=args.end, use_warmup=not args.no_warmup)
     try:
@@ -544,8 +495,6 @@ def run_backtest_parallel():
     print(f"Generated {total_folds} walk-forward folds (workers={args.workers}).")
     _write_run_status(args.output, 'running', expected_folds=total_folds)
 
-    args_dict = vars(args)
-
     all_fold_summaries = []
     all_trade_logs = []
     all_trade_marks = []
@@ -558,35 +507,26 @@ def run_backtest_parallel():
     all_output = {}
     failed_folds = []
 
-    n_workers = max(1, min(args.workers, os.cpu_count() or 1))
+    all_output, failed_folds = execute_folds(
+        master_df, args, TICKERS, SECTOR_MAP, universe_name, pool_path,
+        earnings_screen, fb.folds, args.workers,
+    )
 
-    with ProcessPoolExecutor(
-        max_workers=n_workers,
-        initializer=_worker_init,
-        initargs=(master_df, args_dict, TICKERS, SECTOR_MAP, universe_name, pool_path, earnings_screen)
-    ) as ex:
-        futures = {ex.submit(_process_fold, i, fold): i for i, fold in enumerate(fb.folds)}
-
-        for future in as_completed(futures):
-            i = futures[future]
-            try:
-                (fold_summary, logs, daily_returns, active_counts, rejected, marks,
-                 signal_log, daily_margin, selected_pairs, output_lines) = future.result()
-                all_output[i] = output_lines
-                if fold_summary is not None:
-                    all_fold_summaries.append(fold_summary)
-                all_trade_logs.extend(logs)
-                all_trade_marks.extend(marks)
-                all_daily_returns.extend(daily_returns)
-                all_daily_active_counts.extend(active_counts)
-                all_rejected_orders.extend(rejected)
-                all_signal_log.extend(signal_log)
-                all_daily_margin.extend(daily_margin)
-                all_selected_pairs.extend(selected_pairs)
-            except Exception as e:
-                failed_folds.append(i)
-                all_output[i] = [f"\n--- Processing Fold {i} ---", f"  ERROR: {e}"]
-                all_output[i].append(traceback.format_exc())
+    for i, result in all_output.items():
+        if i in failed_folds:
+            continue
+        (fold_summary, logs, daily_returns, active_counts, rejected, marks,
+         signal_log, daily_margin, selected_pairs, output_lines) = result
+        if fold_summary is not None:
+            all_fold_summaries.append(fold_summary)
+        all_trade_logs.extend(logs)
+        all_trade_marks.extend(marks)
+        all_daily_returns.extend(daily_returns)
+        all_daily_active_counts.extend(active_counts)
+        all_rejected_orders.extend(rejected)
+        all_signal_log.extend(signal_log)
+        all_daily_margin.extend(daily_margin)
+        all_selected_pairs.extend(selected_pairs)
 
     for i in sorted(all_output):
         for line in all_output[i]:
@@ -781,8 +721,8 @@ def run_backtest_parallel():
             print(f"Results saved to {args.output}")
 
             metrics = {
-                'profile': str(args.profile),
-                'mode': str(args.mode),
+                'experiment': str(args.name),
+                'mode': 'coint',
                 'universe': str(universe_name),
                 'cross_sector': bool(args.cross_sector),
                 'start': str(args.start),
@@ -845,4 +785,4 @@ def run_backtest_parallel():
     return 0
 
 if __name__ == "__main__":
-    raise SystemExit(run_backtest_parallel())
+    raise SystemExit(run_experiment())

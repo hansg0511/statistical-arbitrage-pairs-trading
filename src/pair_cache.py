@@ -1,187 +1,195 @@
+"""Deterministic selection-pool storage and filtering."""
+
+from __future__ import annotations
+
 import os
 import pickle
+from typing import Any, Dict, List, Mapping, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Tuple, Optional, List, Set
-
-CacheKey = Tuple[str, str, str, bool]
-FilteredCacheKey = Tuple[str, str, str, bool, float]
 
 
-def filter_pairs_by_half_life(df: Optional[pd.DataFrame], log_space: bool = True) -> pd.DataFrame:
+class PoolCacheError(RuntimeError):
+    """Raised when an existing pool cannot be read safely."""
+
+
+def filter_pairs_by_half_life(
+    df: Optional[pd.DataFrame], log_space: bool = True
+) -> pd.DataFrame:
     """Keep only pairs with a finite, positive half-life in the active space."""
     if df is None:
         return pd.DataFrame()
     if df.empty:
         return df.copy()
 
-    column = 'half_life_log' if log_space else 'half_life'
+    column = "half_life_log" if log_space else "half_life"
     if column not in df.columns:
         return df.iloc[0:0].copy()
 
-    values = pd.to_numeric(df[column], errors='coerce')
+    values = pd.to_numeric(df[column], errors="coerce")
     mask = values.notna()
     mask &= np.isfinite(values.to_numpy(dtype=float))
     mask &= values > 0
     return df.loc[mask].copy()
 
 
-class PairSelectionCache:
-    """
-    Caches pair selection results.
-    
-    Two tiers:
-      - _data (pair_selection_cache.pkl): keyed by (universe, sel_start, sel_end, same_sector)
-      - _filtered (pair_selection_filtered.pkl): keyed by (universe, sel_start, sel_end, same_sector, threshold)
-    
-    Filtered cache stores results after return-divergence filtering, so re-running
-    with the same threshold skips the filter step entirely.
-    """
-    def __init__(self, cache_dir: str = 'research/cache'):
-        self.cache_dir = cache_dir
-        self.cache_path = os.path.join(cache_dir, 'pair_selection_cache.pkl')
-        self.filtered_path = os.path.join(cache_dir, 'pair_selection_filtered.pkl')
-        self._data: Dict[CacheKey, pd.DataFrame] = {}
-        self._filtered: Dict[FilteredCacheKey, pd.DataFrame] = {}
-        os.makedirs(cache_dir, exist_ok=True)
-        self._load()
-        self._load_filtered()
+def filter_pairs_by_return_divergence(
+    df: Optional[pd.DataFrame],
+    close_prices: pd.DataFrame,
+    start: str,
+    end: str,
+    max_divergence: float,
+) -> pd.DataFrame:
+    """Apply the explicit cumulative-return prefilter to candidate pairs."""
+    if df is None or df.empty:
+        return pd.DataFrame() if df is None else df.copy()
+    if "pair" not in df.columns:
+        return df.iloc[0:0].copy()
 
-    def _load(self):
-        if os.path.exists(self.cache_path):
-            try:
-                with open(self.cache_path, 'rb') as f:
-                    self._data = pickle.load(f)
-            except Exception:
-                self._data = {}
-
-    def _load_filtered(self):
-        if os.path.exists(self.filtered_path):
-            try:
-                with open(self.filtered_path, 'rb') as f:
-                    self._filtered = pickle.load(f)
-            except Exception:
-                self._filtered = {}
-
-    def save(self):
-        with open(self.cache_path, 'wb') as f:
-            pickle.dump(self._data, f)
-        with open(self.filtered_path, 'wb') as f:
-            pickle.dump(self._filtered, f)
-
-    def get(self, key: CacheKey) -> Optional[pd.DataFrame]:
-        df = self._data.get(key)
-        if df is not None:
-            return df.copy()
-        return None
-
-    def set(self, key: CacheKey, df: pd.DataFrame):
-        self._data[key] = df.copy()
-
-    def get_filtered(self, key: FilteredCacheKey, log_space: bool = True) -> Optional[pd.DataFrame]:
-        df = self._filtered.get(key)
-        if df is not None:
-            return filter_pairs_by_half_life(df, log_space=log_space)
-        return None
-
-    def set_filtered(self, key: FilteredCacheKey, df: pd.DataFrame):
-        self._filtered[key] = df.copy()
-
-    def clear(self):
-        self._data = {}
-        self._filtered = {}
+    window = close_prices.loc[start:end]
+    keep = []
+    for pair in df["pair"]:
+        tickers = str(pair).split("-")
+        if len(tickers) != 2 or any(t not in window.columns for t in tickers):
+            keep.append(False)
+            continue
+        first, second = (window[t].dropna() for t in tickers)
+        if first.empty or second.empty:
+            keep.append(False)
+            continue
+        r1 = first.iloc[-1] / first.iloc[0] - 1
+        r2 = second.iloc[-1] / second.iloc[0] - 1
+        keep.append(np.isfinite(r1) and np.isfinite(r2) and abs(r1 - r2) <= max_divergence)
+    return df.loc[keep].copy()
 
 
 class PoolCache:
-    """
-    Universe-free pool cache keyed by bare ``sel_start``.
+    """Window-keyed pair pool with explicit provenance metadata.
 
-    Pools are seeded with the full superset of candidate pairs (cointegration
-    metrics, unfiltered rows) for a given selection window. Universe / sector /
-    p-value / divergence filtering is deferred to load time via :meth:`select`.
+    New files are pickled as ``{"schema_version": 1, "metadata": ..., 
+    "pools": {selection_start: dataframe}}``. A plain dictionary is accepted
+    for reading old local pools, but new writes always use the documented form.
     """
-    def __init__(self, path: str, prefiltered: bool = False):
+
+    SCHEMA_VERSION = 1
+
+    def __init__(self, path: str | None, metadata: Optional[Mapping[str, Any]] = None):
         self.path = path
-        self.prefiltered = prefiltered
+        self.metadata: Dict[str, Any] = dict(metadata or {})
         self._data: Dict[str, pd.DataFrame] = {}
-        if path and os.path.exists(path):
-            with open(path, 'rb') as f:
-                self._data = pickle.load(f)
+        if not path or not os.path.exists(path):
+            return
+        try:
+            with open(path, "rb") as handle:
+                payload = pickle.load(handle)
+        except (OSError, pickle.PickleError, EOFError, ValueError, TypeError) as exc:
+            raise PoolCacheError(f"cannot read pair pool {path}: {exc}") from exc
 
-    def get_pool(self, sel_start) -> Optional[pd.DataFrame]:
-        df = self._data.get(str(sel_start))
-        return df.copy() if df is not None else None
+        if isinstance(payload, dict) and "pools" in payload:
+            version = payload.get("schema_version")
+            if version != self.SCHEMA_VERSION:
+                raise PoolCacheError(
+                    f"unsupported pair-pool schema {version!r} in {path}"
+                )
+            self.metadata.update(payload.get("metadata") or {})
+            pools = payload["pools"]
+        else:
+            pools = payload
+        if not isinstance(pools, dict) or any(
+            not isinstance(frame, pd.DataFrame) for frame in pools.values()
+        ):
+            raise PoolCacheError(f"pair pool has invalid contents: {path}")
+        self._data = {str(key): frame.copy() for key, frame in pools.items()}
+
+    @property
+    def data(self) -> Dict[str, pd.DataFrame]:
+        """Return a defensive copy of the cached windows."""
+        return {key: frame.copy() for key, frame in self._data.items()}
+
+    @property
+    def divergence_applied(self) -> bool:
+        """Whether the builder already applied return-divergence filtering."""
+        return bool(self.metadata.get("return_divergence_applied", False))
+
+    def get_pool(self, sel_start: Any) -> Optional[pd.DataFrame]:
+        frame = self._data.get(str(sel_start))
+        return frame.copy() if frame is not None else None
 
     def keys(self) -> List[str]:
-        return sorted(self._data.keys())
+        return sorted(self._data)
 
-    def has(self, sel_start) -> bool:
+    def has(self, sel_start: Any) -> bool:
         return str(sel_start) in self._data
 
-    def set(self, sel_start, df: pd.DataFrame):
+    def set(self, sel_start: Any, df: pd.DataFrame) -> None:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError("pair pool entries must be pandas DataFrames")
         self._data[str(sel_start)] = df.copy()
 
-    def save(self):
+    def save(self) -> None:
         if not self.path:
-            return
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path, 'wb') as f:
-            pickle.dump(self._data, f)
+            raise ValueError("cannot save a pool without an output path")
+        parent = os.path.dirname(os.path.abspath(self.path))
+        os.makedirs(parent, exist_ok=True)
+        payload = {
+            "schema_version": self.SCHEMA_VERSION,
+            "metadata": dict(self.metadata),
+            "pools": self._data,
+        }
+        with open(self.path, "wb") as handle:
+            pickle.dump(payload, handle)
 
-    def select(self, sel_start, universe: str, sector_map, cross_sector: bool,
-               pvalue: float = 0.05, return_divergence: Optional[float] = None,
-               log_space: bool = True) -> pd.DataFrame:
-        """
-        Load the pool for ``sel_start`` and apply universe / sector / p-value /
-        divergence masks. Returns an empty DataFrame if the window is missing.
+    def select(
+        self,
+        sel_start: Any,
+        universe: str,
+        sector_map: Mapping[str, List[str]],
+        cross_sector: bool,
+        pvalue: float = 0.05,
+        log_space: bool = True,
+    ) -> pd.DataFrame:
+        """Apply universe, sector, significance, and half-life filters.
 
-        ``universe`` can be 'core' or 'sp500'. For ``cross_sector=False`` pairs
-        are restricted to those whose tickers share a sector in ``sector_map``.
+        Return-divergence is intentionally not an argument here. It is either
+        applied while building the pool or applied explicitly by the runner
+        with the same price snapshot used for the experiment.
         """
         pool = self.get_pool(sel_start)
-        empty = pd.DataFrame()
-        if pool is None or pool.empty:
-            return empty
+        if pool is None or pool.empty or "pair" not in pool.columns:
+            return pd.DataFrame(columns=pool.columns if pool is not None else None)
 
-        ticker_set = set()
-        for sector, tickers in list(sector_map.items()):
-            ticker_set.update(tickers)
+        ticker_to_sector = {
+            ticker: sector
+            for sector, tickers in sector_map.items()
+            for ticker in tickers
+        }
+        ticker_set = set(ticker_to_sector)
 
-        df = pool.copy()
-        df = df[df['pair'].apply(lambda p: all(t in ticker_set for t in p.split('-')))]
+        def in_universe(pair: Any) -> bool:
+            parts = str(pair).split("-")
+            return len(parts) == 2 and all(t in ticker_set for t in parts)
 
-        if df.empty:
-            return df
-
+        df = pool.loc[pool["pair"].map(in_universe)].copy()
         if not cross_sector:
-            ticker_to_sector = {}
-            for sector, tickers in sector_map.items():
-                for t in tickers:
-                    ticker_to_sector[t] = sector
-            df = df[df['pair'].apply(
-                lambda p: ticker_to_sector.get(p.split('-')[0]) == ticker_to_sector.get(p.split('-')[1])
-            )]
-
+            df = df.loc[
+                df["pair"].map(
+                    lambda pair: ticker_to_sector.get(str(pair).split("-")[0])
+                    == ticker_to_sector.get(str(pair).split("-")[1])
+                )
+            ]
         if df.empty:
             return df
 
-        # Reproduce the seeding significance filter for unfiltered pools. The
-        # half-life validity check must always use the price space consumed by
-        # the backtest, including for pre-filtered core pools.
-        if not self.prefiltered:
-            pcol = 'cointegration_pvalue_log' if 'cointegration_pvalue_log' in df.columns else 'cointegration_pvalue'
-            if pcol in df.columns:
-                df = df[df[pcol] < pvalue]
-
+        pvalue_column = (
+            "cointegration_pvalue_log"
+            if log_space and "cointegration_pvalue_log" in df.columns
+            else "cointegration_pvalue"
+        )
+        if pvalue_column in df.columns:
+            values = pd.to_numeric(df[pvalue_column], errors="coerce")
+            df = df.loc[values.notna() & (values < pvalue)]
         df = filter_pairs_by_half_life(df, log_space=log_space)
-
-        if return_divergence is not None and not df.empty:
-            # Divergence requires live price data; the caller applies it
-            # separately after selection. Nothing to do here.
-            pass
-
         if df.empty:
             return df
-        if 'cointegration_pvalue_log' in df.columns:
-            return df.sort_values('cointegration_pvalue_log', ascending=True)
-        return df.sort_values('cointegration_pvalue', ascending=True)
+        return df.sort_values(pvalue_column if pvalue_column in df.columns else "pair")

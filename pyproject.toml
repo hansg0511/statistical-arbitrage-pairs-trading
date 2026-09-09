@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robust-mean-reversion"
+version = "0.1.0"
+description = "Reproducible walk-forward equity-pairs research and portfolio construction"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "backtrader>=1.9.78",
+    "matplotlib>=3.7",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "PyYAML>=6.0",
+    "python-dateutil>=2.8",
+    "statsmodels>=0.14",
+    "yfinance>=0.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "research*", "scripts*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
