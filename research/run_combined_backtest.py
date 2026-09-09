@@ -54,15 +54,16 @@ def load_selected_book_config(path=DEFAULT_CONFIG):
     return config
 
 
-def leg_specs(config, window):
-    """Resolve configured relative fixed-sweep run directories."""
+def leg_specs(config, window, start_idx=0):
+    """Resolve one configured relative fixed-sweep run-directory pair."""
     root = config['event_replay']['input_root']
-    windows = config['event_replay']['windows']
-    if window not in windows:
+    windows = config['event_replay']['windows'].get(window, {})
+    starts = windows.get('starts', [])
+    if start_idx >= len(starts):
         raise ValueError(f'unknown event-replay window: {window}')
     return {
         leg: (os.path.join(root, relative_path), leg)
-        for leg, relative_path in windows[window].items()
+        for leg, relative_path in starts[start_idx].items()
     }
 
 
@@ -70,8 +71,12 @@ def leg_specs(config, window):
 # Loading helpers (take a fixed-sweep run directory or a legacy-style config name)
 # --------------------------------------------------------------------------
 def _run_dir(cfg_or_dir):
-    """Accept a configured relative run directory or an absolute path."""
-    return os.fspath(cfg_or_dir)
+    """Accept a configured path plus the old fixed-sweep relative form."""
+    path = os.fspath(cfg_or_dir)
+    if os.path.isabs(path) or os.path.isdir(path):
+        return path
+    legacy_path = os.path.join('fixed_diagnosis', path)
+    return legacy_path if os.path.isdir(legacy_path) else path
 
 
 def load_ret(cfg_or_dir):
@@ -438,36 +443,69 @@ def main():
     clamp = args.clamp if args.clamp is not None else [bounds['min'], bounds['max']]
     output_root = args.out or config['event_replay']['output_root']
 
-    leg_specs = leg_specs(config, args.window)
-    leg_data = {}
-    leg_rets = {}
-    for L, (cfg, label) in leg_specs.items():
-        leg_data[L] = {'trades': None, 'folds': None}
-        leg_data[L]['trades'], leg_data[L]['folds'] = build_trades(cfg)
-        leg_rets[L] = load_ret(cfg)
-
-    wp = weight_path_momentum_causal(
-        leg_rets['A'], leg_rets['B'],
-        lookback=lookback, step=step,
-        wmin=clamp[0], wmax=clamp[1],
-    )
-
     mechanisms = ['A', 'B'] if args.mechanism == 'both' else [args.mechanism]
-    for mech in mechanisms:
-        rows, ledger, rejected, trade_rows = simulate(
-            leg_data, wp, mech,
-            capital=capital, pct=pct,
+    window_config = config['event_replay']['windows'].get(args.window, {})
+    starts = window_config.get('starts', [])
+    if not starts:
+        raise ValueError(f'no event-replay starts configured for {args.window}')
+
+    run_metrics = {mechanism: [] for mechanism in mechanisms}
+    for start_idx in range(len(starts)):
+        configured_legs = leg_specs(config, args.window, start_idx)
+        leg_data = {}
+        leg_rets = {}
+        for L, (cfg, _label) in configured_legs.items():
+            leg_data[L] = {'trades': None, 'folds': None}
+            leg_data[L]['trades'], leg_data[L]['folds'] = build_trades(cfg)
+            leg_rets[L] = load_ret(cfg)
+
+        wp = weight_path_momentum_causal(
+            leg_rets['A'], leg_rets['B'],
+            lookback=lookback, step=step,
+            wmin=clamp[0], wmax=clamp[1],
         )
-        m = metrics(pd.Series([r['daily_return'] for r in rows]))
-        m.update({'window': args.window, 'mechanism': mech, 'capital': capital,
-                  'pct_per_pair': pct, 'lookback_days': lookback, 'step': step,
-                  'weight_min': clamp[0], 'weight_max': clamp[1],
-                  'config': os.path.abspath(args.config), 'n_days': len(rows),
-                  'rejected_entries': len(rejected)})
-        out_dir = os.path.join(output_root, args.window, mech)
-        write_outputs(out_dir, rows, ledger, rejected, trade_rows, wp, m)
-        print(f"[{args.window} {mech}] sharpe={m['sharpe']:.4f} ann_ret={m['ann_ret']*100:.2f}% "
-              f"vol={m['ann_vol']*100:.2f}% mdd={m['mdd']*100:.1f}% rejected={len(rejected)} -> {out_dir}")
+
+        for mech in mechanisms:
+            rows, ledger, rejected, trade_rows = simulate(
+                leg_data, wp, mech,
+                capital=capital, pct=pct,
+            )
+            m = metrics(pd.Series([r['daily_return'] for r in rows]))
+            m.update({'window': args.window, 'mechanism': mech, 'capital': capital,
+                      'pct_per_pair': pct, 'lookback_days': lookback, 'step': step,
+                      'weight_min': clamp[0], 'weight_max': clamp[1],
+                      'config': os.path.abspath(args.config), 'start_index': start_idx,
+                      'n_days': len(rows), 'rejected_entries': len(rejected)})
+            run_metrics[mech].append(m)
+            out_dir = os.path.join(
+                output_root, args.window, f'start_{start_idx + 1:02d}', mech
+            )
+            write_outputs(out_dir, rows, ledger, rejected, trade_rows, wp, m)
+            print(f"[{args.window} start_{start_idx + 1:02d} {mech}] "
+                  f"sharpe={m['sharpe']:.4f} ann_ret={m['ann_ret']*100:.2f}% "
+                  f"vol={m['ann_vol']*100:.2f}% mdd={m['mdd']*100:.1f}% "
+                  f"rejected={len(rejected)} -> {out_dir}")
+
+    summary = {
+        'config': os.path.abspath(args.config),
+        'window': args.window,
+        'n_starts': len(starts),
+        'mechanisms': {},
+    }
+    for mech, values in run_metrics.items():
+        summary['mechanisms'][mech] = {
+            key: float(np.mean([float(value[key]) for value in values]))
+            for key in ('ann_ret', 'ann_vol', 'sharpe', 'mdd')
+        }
+        summary['mechanisms'][mech]['n_days'] = [value['n_days'] for value in values]
+        summary['mechanisms'][mech]['rejected_entries'] = sum(
+            value['rejected_entries'] for value in values
+        )
+    summary_path = os.path.join(output_root, args.window, 'metrics.json')
+    os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+    with open(summary_path, 'w', encoding='utf-8') as handle:
+        json.dump(summary, handle, indent=2)
+    print(f'Wrote {summary_path}')
 
 
 if __name__ == '__main__':

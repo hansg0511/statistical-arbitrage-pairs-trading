@@ -69,12 +69,36 @@
     "output_root": "results/final/combined",
     "windows": {
       "recent": {
-        "A": "10b/2023-01-01_cross_sector_slide1m_noscreen",
-        "B": "07/2023-11-01_cross_sector_slide3m_bd7"
+        "starts": [
+          {
+            "A": "10b/2023-01-01_cross_sector_slide1m_noscreen",
+            "B": "07/2023-11-01_cross_sector_slide3m_bd7"
+          },
+          {
+            "A": "10b/2023-02-01_cross_sector_slide1m_noscreen",
+            "B": "07/2023-12-01_cross_sector_slide3m_bd7"
+          },
+          {
+            "A": "10b/2023-03-01_cross_sector_slide1m_noscreen",
+            "B": "07/2024-01-01_cross_sector_slide3m_bd7"
+          },
+          {
+            "A": "10b/2023-04-01_cross_sector_slide1m_noscreen",
+            "B": "07/2024-02-01_cross_sector_slide3m_bd7"
+          },
+          {
+            "A": "10b/2023-05-01_cross_sector_slide1m_noscreen",
+            "B": "07/2024-03-01_cross_sector_slide3m_bd7"
+          }
+        ]
       },
       "historical": {
-        "A": "09b/2014-01-01_cross_sector_slide1m_noscreen",
-        "B": "09a/2014-11-01_cross_sector_slide3m_bd7"
+        "starts": [
+          {
+            "A": "09b/2014-01-01_cross_sector_slide1m_noscreen",
+            "B": "09a/2014-11-01_cross_sector_slide3m_bd7"
+          }
+        ]
       }
     }
   },

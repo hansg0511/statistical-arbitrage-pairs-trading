@@ -20,6 +20,13 @@ The selected-book evaluation reports recent means over five aligned starts and o
 | A | 1.0937 / 9.45% | 1.1222 / 9.10% | 1.1114 / 9.17% |
 | B | 1.1413 / 9.81% | 1.0963 / 8.83% | 1.1058 / 9.07% |
 
+The original committed consolidated replay used hardcoded momentum defaults
+(63 days, 0.10 step, 25%--75% bounds) even though the locked configuration was
+84 days, 0.40, and 10%--90%. After wiring the replay to the locked config, the
+generated `results/final/combined` summaries reproduce the clean40 recent and
+historical values above. This is an explicit configuration correction; the
+trade-event simulation code was not changed to alter strategy math.
+
 ## Current Call Graph
 
 - The two root runners duplicate fold selection, signal preparation, Backtrader setup, and result aggregation. Most launchers invoke `run_backtest_parallel.py`; `run_backtest.py` is imported by the parallel runner for argument/profile handling.
