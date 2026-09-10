@@ -1,22 +1,36 @@
-# Robust Mean-Reversion Research
+# Statistical Arbitrage Pairs Trading - Walk-Forward Research System
 
-Offline research code for walk-forward cointegrated equity-pairs experiments.
-The repository is designed to make selection, event replay, and diagnostics
-auditable. It is not a live trading system.
+This repository contains a walk-forward research engine for cointegrated equity
+pairs. It builds and evaluates 32 strategy configurations across 496 two-leg
+candidate books, replays their trade events in a shared account, and compares
+robustness across recent and historical regimes. The locked output is a
+two-leg portfolio with causal momentum allocation and pinned public artifacts
+for reproducibility. Live broker and execution infrastructure is outside this
+repository.
 
-## Current Result
+## Locked Public Book
 
-The locked selected book is defined in
-[`research/selected_book_config.json`](research/selected_book_config.json).
+The locked configuration is [`research/selected_book_config.json`](research/selected_book_config.json).
 
 - Leg A: `sp500-12m/cross_sector_slide1m_noscreen`
 - Leg B: `sp500-2m/cross_sector_slide3m_bd7`
 - Capital: `$1,000,000`; `pct_per_pair=0.25`
-- Allocator: 84-day causal lookback, 0.40 step, 10%--90% bounds
-- Pair universe: 496 two-leg combinations
+- Allocator: 84-day causal lookback, 0.40 step, 10%--90% bounds, 50% initial Leg A weight
+- Pair universe: 496 two-leg candidate books
+- Underlying sizing: hedge-ratio based; `dollar_neutral=false` in the locked configuration
 
-Recent values are means over five aligned starts. Historical is one aligned
-2015--2019 window.
+The shared-account replay derives trade returns from recorded daily marks and
+target-notional basis, then applies them to a common accounting pool. It does
+not enforce production cash, margin, leverage, borrow, slippage, or transaction
+cost constraints. Open trades are not forcibly rebalanced: Mechanism A re-bases
+active fold sizing monthly, while Mechanism B applies the current weight only to
+new entry flow.
+
+## Replay Snapshot
+
+Recent values are means over five starts; historical is one aligned 2015--2019
+window. These are research-period results, not an untouched portfolio-level
+holdout.
 
 | Window | Mechanism | Annual return | Volatility | Sharpe | Max drawdown |
 |---|---|---:|---:|---:|---:|
@@ -25,44 +39,69 @@ Recent values are means over five aligned starts. Historical is one aligned
 | Historical | A | 9.0980% | 8.0461% | 1.1222 | -8.9530% |
 | Historical | B | 8.8316% | 8.0105% | 1.0963 | -8.8666% |
 
-Compact tables, factor diagnostics, replay inputs, and figures are under
-[`results/final/`](results/final/).
+## Research Evolution
 
-The all-pair score input and recomputed ranking evidence are in
-`results/final/rankings/`. The factor report uses the tracked
-`factors/ff_daily_2015_2025.csv` snapshot; live downloads are opt-in only.
-Candidate ranking rows treat the two pair paths as unordered; the locked book
-configuration defines the Leg A and Leg B runtime roles.
+The project began as a single walk-forward cointegration pairs strategy with a
+narrow mega-cap and same-sector focus. Start-date, historical-regime,
+earnings, and pair-selection tests exposed instability in that early result,
+leading to a 32-configuration study and a 496-book portfolio comparison rather
+than continued tuning of one setup. The resulting two-leg book, Clean40
+allocator, and factor diagnostics are explained in the [research journey](docs/research_journey.md).
+
+## Validation Boundary
+
+Individual strategy evaluation uses walk-forward out-of-sample trading folds.
+The final portfolio pair and allocator were selected after comparing performance
+across the displayed recent and historical research windows, so those periods
+are not an untouched portfolio-level holdout. The next genuinely unseen evidence
+comes from future, paper, or live observations.
+
+## Open Strategy Decision
+
+The canonical fixtures use the existing loss-only max-holding implementation,
+which measures elapsed calendar dates. Therefore `max_holding_days=15` currently
+means 15 calendar days, not 15 trading sessions. Changing this to 15 trading
+sessions would alter exits and require regenerating affected leg results and
+downstream artifacts.
+
+- A: preserve the historical behavior and document it as 15 calendar days.
+- B: correct it to 15 trading sessions and regenerate the affected research.
+
+No strategy-behavior change is made in this branch.
+
+## Public Evidence
+
+The figures below are regenerated from the tracked shared-account replay
+outputs by [`research/plot_public_results.py`](research/plot_public_results.py).
+
+### Historical selected-book replay
+
+![Historical selected-book shared-account replay](results/final/figures/pair_equity_historical.png)
+
+### Recent start-date robustness
+
+![Recent selected-book five-start robustness](results/final/figures/pair_equity_recent.png)
+
+The recent figure shows the median and min/max range across five starts for both
+replay mechanisms, rather than ten overlapping paths.
 
 ## Workflow
 
-1. `research/run_experiment.py` runs one declarative walk-forward experiment.
-2. `scripts/build_pair_pool.py` builds a metadata-bearing selection pool.
-3. `research/portfolio_selection.py` recomputes the 496-pair rankings from the tracked score snapshot.
-4. `research/run_combined_backtest.py` replays leg trade events in one shared account.
-5. `research/factor_report.py` runs daily FF3 + Momentum + Short-Term Reversal diagnostics from the pinned snapshot.
-6. `research/plot_public_results.py` regenerates the public figures from replay outputs.
-7. `scripts/build_public_artifacts.py` writes compact metrics and the provenance manifest.
+1. [`research/run_experiment.py`](research/run_experiment.py) runs a declarative walk-forward experiment.
+2. [`scripts/build_pair_pool.py`](scripts/build_pair_pool.py) builds a metadata-bearing selection pool.
+3. [`research/portfolio_selection.py`](research/portfolio_selection.py) recomputes the 496-book rankings.
+4. [`research/run_combined_backtest.py`](research/run_combined_backtest.py) replays leg trade events in one shared account.
+5. [`research/factor_report.py`](research/factor_report.py) runs factor diagnostics from the pinned snapshot.
+6. [`research/plot_public_results.py`](research/plot_public_results.py) regenerates the public figures.
+7. [`scripts/build_public_artifacts.py`](scripts/build_public_artifacts.py) writes compact metrics and the provenance manifest.
 
-The shared-account replay uses trade logs and daily trade marks rather than
-adding independent leg return percentages. Mechanism A re-bases active fold
-sizing monthly. Mechanism B locks a fold basis and applies the current weight
-only to new entry flow. Open trades are not forcibly rebalanced.
-
-## Quick Start
+## Reproduce Published Artifacts
 
 From the repository root:
 
 ```text
 python -m pip install -e ".[dev]"
 python -m pytest
-```
-
-## Reproduce Published Artifacts
-
-Run the locked event replay, diagnostics, and artifact builders with:
-
-```text
 python research/portfolio_selection.py
 python research/run_combined_backtest.py --window recent --mechanism both
 python research/run_combined_backtest.py --window historical --mechanism both
@@ -71,29 +110,17 @@ python research/plot_public_results.py
 python scripts/build_public_artifacts.py
 ```
 
-The published replay boundary is `results/final/event_replay_inputs/`; it
-contains trade events and daily marks rather than raw prices or private data.
-The combined replay output is generated locally and is not part of the compact
-tracked artifact set.
-
-## Full-Leg Exploration
-
-The generic experiment runner requires compatible pools and market data. Use
-`--price-snapshot PATH` for a fixed local market-data input. Without a snapshot,
-the runner fetches prices through `yfinance` and records the input when
-`--write-price-snapshot PATH` is supplied. Build a selection pool explicitly
-when a cached pool is not available:
-
-```text
-python research/run_experiment.py --config configs/recent_sweep.yaml
-python scripts/build_pair_pool.py --selection-start 2023-01-01 --selection-stop 2023-05-01 --selection-months 12 --universe sp500 --return-divergence 0.10 --output data/pools/sp500_12m.pkl
-```
+The public replay boundary is
+`results/final/event_replay_inputs/`. It contains trade events and daily marks,
+not raw prices or private data. The combined replay output is generated locally
+and is not part of the compact tracked artifact set. The extended summary and
+locked configuration are [`docs/research_summary.md`](docs/research_summary.md)
+and [`research/selected_book_config.json`](research/selected_book_config.json).
 
 ## Limitations
 
-- No borrow costs, slippage, transaction costs, or realistic capacity model are locked yet.
+- No borrow costs, slippage, transaction costs, or realistic capacity model are locked.
 - Earnings and other single-name events can create large idiosyncratic spread moves.
 - Pair overlap can concentrate exposure in the same underlying names.
-- Fama-French alpha estimates are diagnostics, not proof of factor-neutral excess return.
-- Exact full-leg reproduction requires the same price snapshot and fixed event inputs; vendor downloads can change.
-- The published factor diagnostics are reproducible from the pinned snapshot; use `--live-factors` only for exploratory comparisons.
+- Factor alpha estimates are diagnostics, not proof of factor-neutral excess return.
+- Exact full-leg reproduction requires the fixed event inputs and compatible source data; vendor downloads can change.
