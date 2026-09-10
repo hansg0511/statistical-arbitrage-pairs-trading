@@ -15,3 +15,25 @@ archive/
 research/archive/
 *.log
 *.log.err
+
+# Keep only compact public release artifacts under results/final.
+!results/
+results/*
+!results/final/
+results/final/*
+!results/final/event_replay_inputs/
+!results/final/event_replay_inputs/**
+!results/final/metrics/
+!results/final/metrics/selected_book_metrics.csv
+!results/final/rankings/
+!results/final/rankings/clean40_pair_scores.csv
+!results/final/rankings/clean40_pair_rankings.csv
+!results/final/rankings/clean40_selected_pair.csv
+!results/final/factors/
+!results/final/factors/ff_daily_2015_2025.csv
+!results/final/factors/ff_daily_2015_2025.json
+!results/final/factors/selected_book.md
+!results/final/factors/selected_book.csv
+!results/final/figures/
+!results/final/figures/*.png
+!results/final/manifest.json

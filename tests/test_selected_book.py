@@ -13,6 +13,7 @@ def test_selected_book_is_locked_and_has_one_pair():
         config = json.load(handle)
 
     assert config["status"] == "locked"
+    assert config["schema_version"] == 2
     assert config["pair"]["leg_a"]["path"] == "sp500-12m/cross_sector_slide1m_noscreen"
     assert config["pair"]["leg_b"]["path"] == "sp500-2m/cross_sector_slide3m_bd7"
     assert config["momentum"] == {
@@ -27,7 +28,60 @@ def test_selected_book_is_locked_and_has_one_pair():
 def test_combined_replay_uses_configured_inputs_and_output():
     config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
     specs = leg_specs(config, "recent")
-    assert Path(specs["A"][0]).as_posix().endswith(
-        "fixed_diagnosis/_sweep_pct25/10b/2023-01-01_cross_sector_slide1m_noscreen"
+    assert Path(specs["A"][0]).as_posix() == (
+        "results/final/event_replay_inputs/recent/start_01/A"
     )
     assert config["event_replay"]["output_root"] == "results/final/combined"
+
+
+def test_configured_replay_inputs_are_complete():
+    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    input_root = ROOT / config["event_replay"]["input_root"]
+    required = (
+        "daily_returns.csv",
+        "metrics.json",
+        "oos_fold_summary.csv",
+        "trade_marks.csv",
+        "trade_logs/test_trade_log.csv",
+    )
+
+    for window in config["event_replay"]["windows"].values():
+        for start in window["starts"]:
+            for relative_path in start.values():
+                run_dir = input_root / relative_path
+                for filename in required:
+                    assert (run_dir / filename).is_file(), run_dir / filename
+
+
+def test_config_records_generation_and_execution_assumptions():
+    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    generation = config["leg_generation"]
+    assert generation["leg_a"] == {
+        "pool": "sp500_12m",
+        "selection_months": 12,
+        "slide_months": 1,
+        "earnings_screen": False,
+        "earnings_block_days": 0,
+    }
+    assert generation["leg_b"] == {
+        "pool": "sp500_2m",
+        "selection_months": 2,
+        "slide_months": 3,
+        "earnings_screen": True,
+        "earnings_block_days": 7,
+    }
+    assert config["execution_assumptions"]["margin_behavior"] == "off"
+    assert config["execution_assumptions"]["broker_leverage"] == 100.0
+
+
+def test_public_replay_metadata_does_not_publish_price_paths():
+    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    input_root = ROOT / config["event_replay"]["input_root"]
+    for window in config["event_replay"]["windows"].values():
+        for start in window["starts"]:
+            for relative_path in start.values():
+                metrics_path = input_root / relative_path / "metrics.json"
+                with metrics_path.open(encoding="utf-8") as handle:
+                    payload = json.load(handle)
+                assert payload["price_snapshot"] is None
+                assert payload["price_snapshot_mode"] == "not_published"

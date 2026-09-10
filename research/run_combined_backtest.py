@@ -68,15 +68,10 @@ def leg_specs(config, window, start_idx=0):
 
 
 # --------------------------------------------------------------------------
-# Loading helpers (take a fixed-sweep run directory or a legacy-style config name)
+# Loading helpers (take a configured run directory)
 # --------------------------------------------------------------------------
 def _run_dir(cfg_or_dir):
-    """Accept a configured path plus the old fixed-sweep relative form."""
-    path = os.fspath(cfg_or_dir)
-    if os.path.isabs(path) or os.path.isdir(path):
-        return path
-    legacy_path = os.path.join('fixed_diagnosis', path)
-    return legacy_path if os.path.isdir(legacy_path) else path
+    return os.fspath(cfg_or_dir)
 
 
 def load_ret(cfg_or_dir):
@@ -104,9 +99,12 @@ def load_folds(cfg_or_dir):
 # --------------------------------------------------------------------------
 def _sharpe(x):
     x = x.dropna()
-    if len(x) == 0:
+    if len(x) < 2:
         return float('nan')
-    return x.mean() / x.std() * math.sqrt(252)
+    std = x.std()
+    if not math.isfinite(std) or std == 0:
+        return float('nan')
+    return x.mean() / std * math.sqrt(252)
 
 
 def weight_path_momentum_causal(a, b, lookback=63, step=0.10, wmin=0.25, wmax=0.75):
@@ -267,7 +265,7 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
     def total_value():
         return book_cash + sum(
             sum(info['notional'] * info['cumret'] for info in subs[key]['open'].values())
-            for key in live
+            for key in sorted(live)
         )
 
     # --- mechanism A: monthly re-base of the entry-sizing basis ---
@@ -280,7 +278,8 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
             target = wL(L, d) * C / len(active)
             for key in active:
                 subs[key]['basis'] = target
-        for key, sub in subs.items():
+        for key in sorted(subs):
+            sub = subs[key]
             if key not in active_by_day[d]:
                 sub['basis'] = None
 
@@ -310,18 +309,18 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
             if d in rebalance_dates:
                 rebalance_a(d)
         else:
-            for key in active_by_day[d]:
+            for key in sorted(active_by_day[d]):
                 if fold_first_day.get(key) == d:
                     activate_fold_b(*key, d)
 
         # daily marks on live sub-accounts only
-        for key in live:
+        for key in sorted(live):
             sub = subs[key]
             for info in sub['open'].values():
                 info['cumret'] += info['daily'].get(d, 0.0)
 
         # exits (cash moves by realized PnL)
-        for key in list(live):
+        for key in sorted(live):
             sub = subs[key]
             if not sub['open']:
                 live.discard(key)
@@ -363,7 +362,7 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
 
         leg_val = {L: 0.0 for L in leg_names}
         leg_dep = {L: 0.0 for L in leg_names}
-        for key in live:
+        for key in sorted(live):
             L, fid = key
             sub = subs[key]
             leg_val[L] += sum(info['notional'] * info['cumret'] for info in sub['open'].values())
@@ -389,6 +388,32 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
             })
 
     return rows, ledger, rejected, trade_rows
+
+
+def configured_series(config, window, mechanism, start_idx, capital, pct,
+                      lookback, step, clamp):
+    """Replay one configured leg pair and return its daily return series."""
+    configured_legs = leg_specs(config, window, start_idx)
+    leg_data = {}
+    leg_rets = {}
+    for leg, (path, _label) in configured_legs.items():
+        trades, folds = build_trades(path)
+        leg_data[leg] = {'trades': trades, 'folds': folds}
+        leg_rets[leg] = load_ret(path)
+    weights = weight_path_momentum_causal(
+        leg_rets['A'], leg_rets['B'],
+        lookback=lookback, step=step,
+        wmin=clamp[0], wmax=clamp[1],
+    )
+    rows, ledger, rejected, trade_rows = simulate(
+        leg_data, weights, mechanism, capital=capital, pct=pct
+    )
+    series = pd.Series(
+        [row['daily_return'] for row in rows],
+        index=[row['date'] for row in rows],
+        name=f'{window}_{mechanism}_{start_idx + 1:02d}',
+    )
+    return series, rows, ledger, rejected, trade_rows, weights
 
 
 # --------------------------------------------------------------------------
@@ -434,6 +459,7 @@ def main():
     args = ap.parse_args()
 
     config = load_selected_book_config(args.config)
+    config_label = Path(os.path.relpath(args.config, os.getcwd())).as_posix()
     momentum = config['momentum']
     bounds = momentum['weight_bounds']
     capital = args.capital if args.capital is not None else config['book']['initial_capital']
@@ -451,30 +477,16 @@ def main():
 
     run_metrics = {mechanism: [] for mechanism in mechanisms}
     for start_idx in range(len(starts)):
-        configured_legs = leg_specs(config, args.window, start_idx)
-        leg_data = {}
-        leg_rets = {}
-        for L, (cfg, _label) in configured_legs.items():
-            leg_data[L] = {'trades': None, 'folds': None}
-            leg_data[L]['trades'], leg_data[L]['folds'] = build_trades(cfg)
-            leg_rets[L] = load_ret(cfg)
-
-        wp = weight_path_momentum_causal(
-            leg_rets['A'], leg_rets['B'],
-            lookback=lookback, step=step,
-            wmin=clamp[0], wmax=clamp[1],
-        )
-
         for mech in mechanisms:
-            rows, ledger, rejected, trade_rows = simulate(
-                leg_data, wp, mech,
-                capital=capital, pct=pct,
+            series, rows, ledger, rejected, trade_rows, wp = configured_series(
+                config, args.window, mech, start_idx, capital, pct,
+                lookback, step, clamp,
             )
-            m = metrics(pd.Series([r['daily_return'] for r in rows]))
+            m = metrics(series)
             m.update({'window': args.window, 'mechanism': mech, 'capital': capital,
                       'pct_per_pair': pct, 'lookback_days': lookback, 'step': step,
                       'weight_min': clamp[0], 'weight_max': clamp[1],
-                      'config': os.path.abspath(args.config), 'start_index': start_idx,
+                      'config': config_label, 'start_index': start_idx,
                       'n_days': len(rows), 'rejected_entries': len(rejected)})
             run_metrics[mech].append(m)
             out_dir = os.path.join(
@@ -487,7 +499,7 @@ def main():
                   f"rejected={len(rejected)} -> {out_dir}")
 
     summary = {
-        'config': os.path.abspath(args.config),
+        'config': config_label,
         'window': args.window,
         'n_starts': len(starts),
         'mechanisms': {},

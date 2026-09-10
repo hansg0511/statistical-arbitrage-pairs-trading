@@ -73,16 +73,42 @@ class FFResult:
 
 
 class FamaFrenchFetcher:
-    def __init__(self, cache_dir: str = 'research/ff_factors', frequency: str = 'monthly'):
+    def __init__(
+        self,
+        cache_dir: str = 'research/ff_factors',
+        frequency: str = 'monthly',
+        snapshot_path: Optional[str] = None,
+    ):
         self.frequency = frequency
+        self._snapshot_path = Path(snapshot_path) if snapshot_path else None
         self._cache_dir = Path(cache_dir)
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        if self._snapshot_path is None:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
         suffix = 'daily' if frequency == 'daily' else 'monthly'
         self._cache_path = self._cache_dir / f'ff_{suffix}.pkl'
         self._factors: Optional[pd.DataFrame] = None
 
     def fetch(self, force: bool = False) -> pd.DataFrame:
         if self._factors is not None and not force:
+            return self._factors
+
+        if self._snapshot_path is not None:
+            if not self._snapshot_path.is_file():
+                raise FileNotFoundError(f'Fama-French snapshot not found: {self._snapshot_path}')
+            index_name = 'date' if self.frequency == 'daily' else 'month'
+            frame = pd.read_csv(self._snapshot_path, parse_dates=[index_name])
+            required = {'Mkt-RF', 'SMB', 'HML', 'RF'}
+            if self.frequency == 'daily':
+                required.update({'Mom', 'ST_Rev'})
+            missing = required.difference(frame.columns)
+            if missing:
+                raise ValueError(f'Fama-French snapshot is missing columns: {sorted(missing)}')
+            if frame[index_name].duplicated().any():
+                raise ValueError(f'Fama-French snapshot has duplicate {index_name} values')
+            frame = frame.set_index(index_name).sort_index()
+            if not np.isfinite(frame[list(required)].to_numpy(dtype=float)).all():
+                raise ValueError('Fama-French snapshot contains non-finite values')
+            self._factors = frame
             return self._factors
 
         if self._cache_path.exists() and not force:

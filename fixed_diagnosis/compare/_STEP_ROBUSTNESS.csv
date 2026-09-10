@@ -1,7 +1,0 @@
-param,mech,recent,hist,joined,score_rank,rank_avg_rank,joined_rank
-step,A,0.782,1.11,1.009,2,24,1
-step,B,0.753,1.063,0.966,2,26,1
-step,A,0.826,1.139,1.043,1,17,1
-step,B,0.817,1.094,1.007,2,16,1
-step,A,0.863,1.138,1.053,1,18,1
-step,B,0.866,1.096,1.023,1,14,1

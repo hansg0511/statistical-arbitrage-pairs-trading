@@ -1,0 +1,98 @@
+{
+  "schema_version": 2,
+  "source_revision": "3d3ae662be5a35d6eee697592da4d54a0a6ef744",
+  "config": {
+    "path": "research/selected_book_config.json",
+    "sha256": "77ef13a9b770f65f554422cae6ed463ef0ed4da019f37e79d910f0095b287bf7",
+    "schema_version": 2,
+    "locked_on": "2026-09-08"
+  },
+  "selection": {
+    "score_source": {
+      "path": "results/final/rankings/clean40_pair_scores.csv",
+      "sha256": "2fbdc86e9bc7d83f55ba5b3caac2986591565f90091fbd1eb5b391be977c5c54"
+    },
+    "rankings": {
+      "path": "results/final/rankings/clean40_pair_rankings.csv",
+      "sha256": "0a47bea3c3d2ec71abb98f0e3418fcf992b89cba92c0738b91360e2404e3fff3",
+      "rows": 992
+    },
+    "selected_pair": {
+      "path": "results/final/rankings/clean40_selected_pair.csv",
+      "sha256": "05735fc8a482708f49ffc6ee03758947895ae09f419cc4b0ccbcbd090fe96f97",
+      "rows": 2
+    },
+    "pair_count_per_mechanism": 496,
+    "criteria": [
+      "separate_score = min(recent Sharpe, historical Sharpe)",
+      "rank_average = mean of dense recent and historical Sharpe ranks",
+      "joined_sharpe = Sharpe of joined historical and recent series",
+      "selected pair is rank one under all criteria in mechanisms A and B"
+    ],
+    "generator": "research/portfolio_selection.py",
+    "command": "python research/portfolio_selection.py"
+  },
+  "event_replay": {
+    "input_root": "results/final/event_replay_inputs",
+    "input_file_count": 60,
+    "input_tree_sha256": "0acb2df9681b286ac2fc173f1c1d634dbf32eee1f2eba45e485be6df970eced8",
+    "combined_output_root": "results/final/combined",
+    "generator": "research/run_combined_backtest.py"
+  },
+  "artifacts": {
+    "metrics": {
+      "path": "results/final/metrics/selected_book_metrics.csv",
+      "sha256": "717f01d06533f00bfbfba7100f1067c11bc28c568e9be70e5244d4f332e80225"
+    },
+    "factors": {
+      "csv": {
+        "path": "results/final/factors/selected_book.csv",
+        "sha256": "7484c621c4c2834aaeb95802408e7dca635bdb7dce073cffdb3077d0b57e730f"
+      },
+      "markdown": {
+        "path": "results/final/factors/selected_book.md",
+        "sha256": "5bbd3c04ac386bca1b341b9b5689f287e595aa4747611e7cc3ba66f27ff11efd"
+      },
+      "snapshot_metadata": {
+        "path": "results/final/factors/ff_daily_2015_2025.json",
+        "sha256": "b95ee1ad608b3764e9380300b621ee6b2b89a60001a20622a1a1d4c8e5e637e4"
+      },
+      "snapshot": {
+        "path": "results/final/factors/ff_daily_2015_2025.csv",
+        "sha256": "8dab73bbcd142ecc62b29830d35c2317fa6ddd282a66b487b15b11eaa82f588e",
+        "source": "Kenneth French Data Library",
+        "retrieved_at": "2026-07-23"
+      }
+    },
+    "figures": [
+      {
+        "path": "results/final/figures/pair_equity_recent.png",
+        "sha256": "d77f5d00203d07e5b1d6c16cca0234e4677e4ca1cae9855ffab12aaf2e340afd"
+      },
+      {
+        "path": "results/final/figures/pair_equity_historical.png",
+        "sha256": "6267919ebd24aae8c6beaf3550d74e663875c19a9d5d68d1393461957d8e22ec"
+      },
+      {
+        "path": "results/final/figures/weightA_recent.png",
+        "sha256": "ff107c9981ae96c4aac11d7f4a44b0f6d52bb8c0f622c08f6ff5100f114d1990"
+      }
+    ]
+  },
+  "generation_commands": [
+    "python research/portfolio_selection.py",
+    "python research/run_combined_backtest.py --window recent --mechanism both",
+    "python research/run_combined_backtest.py --window historical --mechanism both",
+    "python research/factor_report.py",
+    "python research/plot_public_results.py",
+    "python scripts/build_public_artifacts.py"
+  ],
+  "code_paths": [
+    "research/selected_book_config.json",
+    "research/portfolio_selection.py",
+    "research/run_combined_backtest.py",
+    "research/factor_report.py",
+    "research/plot_public_results.py",
+    "scripts/build_public_artifacts.py"
+  ]
+}

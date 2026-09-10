@@ -1,0 +1,24 @@
+{
+  "source": "Kenneth French Data Library",
+  "source_urls": [
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_txt.zip",
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_txt.zip",
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_ST_Reversal_Factor_daily_txt.zip"
+  ],
+  "retrieved_at": "2026-07-23",
+  "retrieval_note": "Date recorded from the local factor cache used for the published factor report.",
+  "frequency": "daily",
+  "date_start": "2015-01-02",
+  "date_end": "2025-12-31",
+  "columns": [
+    "Mkt-RF",
+    "SMB",
+    "HML",
+    "RF",
+    "Mom",
+    "ST_Rev"
+  ],
+  "rows": 2766,
+  "snapshot_file": "results/final/factors/ff_daily_2015_2025.csv",
+  "sha256": "8dab73bbcd142ecc62b29830d35c2317fa6ddd282a66b487b15b11eaa82f588e"
+}
