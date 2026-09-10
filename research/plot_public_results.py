@@ -31,6 +31,16 @@ def _equity(path: Path) -> pd.Series:
     return (1.0 + _daily_returns(path).fillna(0.0)).cumprod()
 
 
+def _equity_paths(paths: list[Path]) -> pd.DataFrame:
+    """Align sparse equity curves while preserving each path's own start."""
+    curves = pd.concat(
+        [_equity(path).rename(path.parent.parent.name) for path in paths],
+        axis=1,
+        sort=False,
+    ).sort_index()
+    return curves.ffill()
+
+
 def _run_paths(combined_root: Path, window: str, mechanism: str) -> list[Path]:
     paths = sorted((combined_root / window).glob(f"start_*/{mechanism}/daily_returns.csv"))
     if not paths:
@@ -50,15 +60,26 @@ def plot_recent(combined_root: Path, output_root: Path) -> Path:
     figure, axis = plt.subplots(figsize=(13, 5.5))
     colors = {"A": "#1769aa", "B": "#b04a00"}
     for mechanism in ("A", "B"):
-        for path in _run_paths(combined_root, "recent", mechanism):
-            axis.plot(
-                _equity(path),
-                color=colors[mechanism],
-                alpha=0.35,
-                linewidth=1.0,
-                label=f"Mechanism {mechanism} {path.parent.parent.name}",
-            )
-    axis.set_title("Recent selected-book shared-account replay")
+        curves = _equity_paths(_run_paths(combined_root, "recent", mechanism))
+        lower = curves.min(axis=1)
+        median = curves.median(axis=1)
+        upper = curves.max(axis=1)
+        axis.fill_between(
+            curves.index,
+            lower.to_numpy(),
+            upper.to_numpy(),
+            color=colors[mechanism],
+            alpha=0.16,
+            label=f"Mechanism {mechanism} range (five starts)",
+        )
+        axis.plot(
+            curves.index,
+            median,
+            color=colors[mechanism],
+            linewidth=2.0,
+            label=f"Mechanism {mechanism} median",
+        )
+    axis.set_title("Recent selected-book replay: five-start robustness")
     axis.set_ylabel("Growth of $1")
     _format_axis(axis)
     axis.legend(loc="best", fontsize=7, ncol=2)

@@ -56,8 +56,8 @@ class EarningsScreen:
         window_end = entry + timedelta(days=max_holding_days)
         if any(entry < d <= window_end for d in dates):
             return True
-        # Backward window: earnings within [entry - block_days_after, entry)
-        # Blocks trades for N trading days after an earnings event
+        # Backward window uses calendar dates and blocks the post-event period.
+        # An event within the configured N-calendar-day window blocks the entry.
         if block_days_after > 0:
             block_start = entry - timedelta(days=block_days_after)
             if any(block_start < d <= entry for d in dates):

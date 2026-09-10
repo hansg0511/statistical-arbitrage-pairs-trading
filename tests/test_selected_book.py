@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from research.run_combined_backtest import leg_specs, load_selected_book_config
 
 
@@ -70,8 +72,24 @@ def test_config_records_generation_and_execution_assumptions():
         "earnings_screen": True,
         "earnings_block_days": 7,
     }
+    assert generation["shared"]["strategy"]["max_holding_days"] == 15
+    assert generation["shared"]["strategy"]["max_holding_unit"] == "calendar_days"
     assert config["execution_assumptions"]["margin_behavior"] == "off"
     assert config["execution_assumptions"]["broker_leverage"] == 100.0
+
+
+def test_selected_book_requires_calendar_holding_unit(tmp_path):
+    source = ROOT / "research" / "selected_book_config.json"
+    with source.open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    config["leg_generation"]["shared"]["strategy"]["max_holding_unit"] = (
+        "trading_sessions"
+    )
+    path = tmp_path / "selected_book_config.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="max_holding_unit"):
+        load_selected_book_config(path)
 
 
 def test_public_replay_metadata_does_not_publish_price_paths():

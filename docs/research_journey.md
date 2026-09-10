@@ -32,8 +32,9 @@ engine also monitored hedge-ratio stability and could close a trade when the
 relationship appeared to have structurally changed. A loss-only maximum-holding
 condition and fold/session termination handled positions that did not resolve
 normally. The current implementation measures that maximum-holding threshold
-with calendar-date subtraction: the tested `max_holding_days=15` means 15
-calendar days, not 15 trading sessions.
+with calendar-date subtraction: the tested `max_holding_days=15` and
+`max_holding_unit="calendar_days"` mean 15 calendar days, not 15 trading
+sessions.
 
 Validation was already intended to be walk-forward rather than a single static
 in-sample fit. Formation data selected pairs and estimated parameters, and

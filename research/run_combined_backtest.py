@@ -5,10 +5,14 @@ daily marks) from the fixed sweep into a single capital account. Each leg keeps 
 walk-forward grid, universe, and per-fold capital; the combination happens at
 the trade-event level.
 
-Pairs are modeled as cash-neutral (buy ~notional of one leg, short ~notional of
-the other; net cash ~ 0), matching the engine, which never rejects on cash in
-these runs. The fold's cash therefore only moves by realized PnL, and "deployed"
-= gross notional outstanding.
+The replay consumes recorded trade-level returns, daily marks, and target-
+notional sizing. Realized PnL is accounted for when trades exit, while open PnL
+is accounted for from daily marks, all within one shared portfolio. Production
+cash, margin, leverage, borrow, financing, slippage, and transaction-cost
+constraints are not enforced here. `book_cash` is an accounting variable in
+this replay, not a full broker cash simulation. The underlying pair trades use
+hedge-ratio sizing because the locked public configuration records
+dollar_neutral=false.
 
 Momentum weights are causal: trailing lookback Sharpe is evaluated strictly
 before each month and the configured step and bounds set the capital split.
@@ -51,6 +55,15 @@ def load_selected_book_config(path=DEFAULT_CONFIG):
     for key in ('pair', 'momentum', 'book', 'event_replay'):
         if key not in config:
             raise ValueError(f'selected book config is missing {key!r}: {path}')
+    holding = config.get('leg_generation', {}).get('shared', {}).get('strategy', {})
+    if (
+        'max_holding_days' not in holding
+        or holding.get('max_holding_unit') != 'calendar_days'
+    ):
+        raise ValueError(
+            'selected book config must declare max_holding_unit="calendar_days": '
+            f'{path}'
+        )
     return config
 
 
@@ -208,8 +221,8 @@ def simulate(leg_data, weight_path, mech, capital=1e6, pct=0.25, max_pairs=20):
     all_trades = {L: leg_data[L]['trades'] for L in leg_names}
     folds_by_leg = {L: leg_data[L]['folds'] for L in leg_names}
 
-    # One shared cash pool (pairs are cash-neutral; cash moves only on realized
-    # PnL). Sub-accounts carry only a sizing 'basis' + their open trades.
+    # One shared accounting portfolio. Realized PnL moves through book_cash and
+    # open PnL remains in marked positions; this is not broker cash simulation.
     book_cash = capital
     subs = {}
     for L in leg_names:

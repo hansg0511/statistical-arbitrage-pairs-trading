@@ -47,7 +47,8 @@
         "resid_val": 90,
         "z_m": 0.5,
         "hr_thresh": 0.8,
-        "max_holding_days": 15
+        "max_holding_days": 15,
+        "max_holding_unit": "calendar_days"
       }
     },
     "leg_a": {

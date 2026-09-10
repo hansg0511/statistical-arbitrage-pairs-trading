@@ -56,18 +56,13 @@ across the displayed recent and historical research windows, so those periods
 are not an untouched portfolio-level holdout. The next genuinely unseen evidence
 comes from future, paper, or live observations.
 
-## Open Strategy Decision
+## Holding Period Semantics
 
-The canonical fixtures use the existing loss-only max-holding implementation,
-which measures elapsed calendar dates. Therefore `max_holding_days=15` currently
-means 15 calendar days, not 15 trading sessions. Changing this to 15 trading
-sessions would alter exits and require regenerating affected leg results and
-downstream artifacts.
-
-- A: preserve the historical behavior and document it as 15 calendar days.
-- B: correct it to 15 trading sessions and regenerate the affected research.
-
-No strategy-behavior change is made in this branch.
+The canonical research uses a loss-only 15-calendar-day maximum holding period,
+recorded as `max_holding_days=15` and `max_holding_unit="calendar_days"` in the
+locked configuration. This is the behavior actually used to generate the
+published research. A trading-session-based rule would be a future strategy
+revision, not a retroactive change to the published backtest.
 
 ## Public Evidence
 

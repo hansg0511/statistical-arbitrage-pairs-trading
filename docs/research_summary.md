@@ -1,10 +1,11 @@
-# Robust Mean-Reversion Research Summary
+# Statistical Arbitrage Pairs Trading - Research Summary
 
 ## Scope
 
 This repository contains an offline, walk-forward research engine for
-cointegrated equity pairs. It is not a live trading system and makes no claims
-about broker execution, borrow availability, slippage, or capacity.
+cointegrated equity pairs. It is not live broker or execution infrastructure
+and makes no claims about broker execution, borrow availability, slippage, or
+capacity.
 
 ## Locked Book
 
@@ -17,10 +18,10 @@ It combines:
 - Capital: `$1,000,000`; `pct_per_pair=0.25`
 - Causal momentum allocator: 84-day lookback, 0.40 step, 10%--90% bounds
 - Initial Leg A weight: 50%
+- Pair universe: 496 two-leg candidate books
 
-The pair universe contains 496 two-leg combinations. The selected pair ranks
-first under separate-score, rank-average, and joined-Sharpe methods for both
-mechanisms A and B.
+The selected pair ranks first under separate-score, rank-average, and
+joined-Sharpe methods for both mechanisms A and B.
 
 ## Results
 
@@ -35,13 +36,19 @@ means over five aligned starts; historical is one aligned 2015--2019 window.
 | Historical | B | 8.8316% | 8.0105% | 1.0963 | -8.8666% |
 
 The compact source tables are in [`results/final/`](../results/final/):
-`metrics/selected_book_metrics.csv`,
-`rankings/clean40_pair_scores.csv`,
-`rankings/clean40_pair_rankings.csv`,
-`rankings/clean40_selected_pair.csv`, and
-`factors/selected_book.md`. The factor input is pinned in
+`metrics/selected_book_metrics.csv`, `rankings/clean40_pair_scores.csv`,
+`rankings/clean40_pair_rankings.csv`, `rankings/clean40_selected_pair.csv`,
+and `factors/selected_book.md`. The factor input is pinned in
 `factors/ff_daily_2015_2025.csv` with retrieval metadata beside it. The
 generation manifest is `manifest.json`.
+
+## Validation Boundary
+
+Individual strategy evaluation uses walk-forward out-of-sample trading folds.
+The final portfolio pair and allocator were selected after comparing performance
+across the displayed recent and historical research windows. Those periods are
+therefore not an untouched portfolio-level holdout. The next genuinely unseen
+evidence comes from future, paper, or live observations.
 
 ## Method
 
@@ -49,32 +56,43 @@ Pair selection uses the tracked corrected score snapshot in
 `results/final/rankings/clean40_pair_scores.csv`. The
 [`research/portfolio_selection.py`](../research/portfolio_selection.py) module
 recomputes the separate score, recent and historical ranks, rank average, and
-joined-Sharpe rank for all 496 pairs. It then requires the configured pair to
-rank first under every criterion in both mechanisms. The two legs are not
-combined by adding independent return percentages. The replay consumes trade
-logs and daily trade marks, maintains one shared cash account, applies causal
-monthly weights, and records realized and open-trade PnL.
+joined-Sharpe rank for all 496 books. It then requires the configured pair to
+rank first under every criterion in both mechanisms.
 
-The `A` and `B` columns in the candidate score tables identify an unordered
-pair; the locked leg roles and runtime assignment are defined by the selected
-book configuration.
+The two legs are not combined by adding independent return percentages. The
+replay derives each trade's return stream from recorded daily marks and its
+target-notional basis, then applies that return to a configured shared-account
+sizing basis. This public accounting replay does not enforce production cash,
+margin, leverage, borrow, slippage, or transaction-cost constraints. Underlying
+pair sizing is hedge-ratio based unless dollar-neutral mode is explicitly
+enabled; the locked configuration records `dollar_neutral=false`.
 
 Mechanism A re-bases active fold sizing monthly. Mechanism B locks a fold basis
 and applies the current weight only to new entry flow. Neither mechanism forces
 open trades to rebalance.
 
+The `A` and `B` columns in the candidate score tables identify an unordered
+pair; the locked leg roles and runtime assignment are defined by the selected
+book configuration.
+
 ## Generation Parameters
 
 Both legs use the S&P 500 universe, log prices, cross-sector pairing, a
 cointegration p-value threshold of 0.05, return-divergence threshold 0.10,
-three-month test folds, and these fixed strategy parameters: entry z-score
-2.2, exit z-score 1.0, stop z-score 4.5, residual validation 90, z-score
-lookback multiplier 0.5, hedge-ratio threshold 0.8, and maximum holding period
-15 trading days. Each fold selects at most 20 pairs with `pct_per_pair=0.25`
-and `dollar_neutral=false`.
+three-month test folds, and these fixed strategy parameters: entry z-score 2.2,
+exit z-score 1.0, stop z-score 4.5, residual validation 90, z-score lookback
+multiplier 0.5, and hedge-ratio threshold 0.8. Each fold selects at most 20
+pairs with `pct_per_pair=0.25` and `dollar_neutral=false`.
+
+The canonical event fixtures use a loss-only maximum-holding check based on
+elapsed calendar dates. In the locked configuration, `max_holding_days=15` with
+`max_holding_unit="calendar_days"` means 15 calendar days. This is the behavior
+actually used to generate the published research. A trading-session-based rule
+would be a future strategy revision rather than a retroactive change to the
+published backtest.
 
 - Leg A uses pool `sp500_12m`, 12-month selection, one-month fold slide, and no earnings screen.
-- Leg B uses pool `sp500_2m`, 2-month selection, three-month fold slide, and an earnings screen with a seven-day block.
+- Leg B uses pool `sp500_2m`, 2-month selection, three-month fold slide, and an earnings screen with a 15-calendar-day forward window and seven-calendar-day post-event block.
 - The shared account starts at `$1,000,000`; the allocator uses an 84-day causal lookback, 0.40 step, 10%--90% bounds, and initial Leg A weight 50%.
 - Replay assumptions are broker leverage 100, margin behavior `off`, 50% long and short margin, and 25%/30% maintenance requirements. Borrow, slippage, and transaction costs are not modeled.
 
@@ -108,14 +126,5 @@ The combined replay reads only the tracked event fixtures under
 `results/final/event_replay_inputs/`. The generic experiment runner remains an
 exploratory path and requires a compatible price snapshot and pool data.
 
-The experiment runner can load a validated local price snapshot with
-`--price-snapshot`; without one it fetches prices through `yfinance`. Pool
-construction is explicit and metadata-bearing:
-
-```text
-python scripts/build_pair_pool.py --selection-start 2023-01-01 --selection-stop 2023-05-01 --selection-months 12 --universe sp500 --return-divergence 0.10 --output data/pools/sp500_12m.pkl
-```
-
-The historical `fixed_diagnosis/` corpus and notebooks are evidence of the
-development process, not the runtime source of truth. The archival tag
-`pre-public-cleanup-20260909` preserves that development history separately.
+The archival tag `pre-public-cleanup-20260909` preserves the internal
+development history separately from the proposed public tree.
