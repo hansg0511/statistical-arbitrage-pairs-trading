@@ -6,6 +6,11 @@ import pandas as pd
 
 from src.backtest import PairTradingStrategy, ZScoreData, calculate_pair_sizes
 from research.run_experiment import summarize_exposure
+from research.run_sizing_capital_audit import (
+    assess_capacity,
+    margin_requirement,
+    sequential_capacity_ledger,
+)
 
 
 def test_reference_leg_sizing_preserves_canonical_log_space_math():
@@ -19,7 +24,12 @@ def test_reference_leg_sizing_preserves_canonical_log_space_math():
         pair_sizing_mode='reference_leg',
     )
 
-    assert result['reference_notional'] == 250_000.0
+    assert result['sizing_capital'] == 1_000_000.0
+    assert result['sizing_budget'] == 250_000.0
+    assert result['reference_leg_notional'] == 250_000.0
+    assert result['target_notional'] == 250_000.0
+    assert result['pair_gross_budget'] == result['sizing_budget']
+    assert result['pair_gross_budget_enforced'] is False
     assert result['size2'] == 5_000
     assert result['size1'] == 1_000
     assert result['actual_gross_exposure'] == 350_000.0
@@ -69,11 +79,17 @@ def test_gross_exposure_sizing_preserves_hr_below_one_after_rounding():
     )
 
     assert result['pair_gross_budget'] == 250_000.0
-    assert result['reference_leg_target_notional'] == 250_000.0 / 1.4
+    assert result['sizing_capital'] == 1_000_000.0
+    assert result['sizing_budget'] == 250_000.0
+    assert result['reference_leg_notional'] == 250_000.0 / 1.4
+    assert result['target_notional'] == result['sizing_budget']
     assert result['valid']
     assert result['actual_gross_exposure'] <= result['pair_gross_budget']
     assert math.isclose(
         result['actual_gross_exposure'], result['pair_gross_budget'], rel_tol=0.001
+    )
+    assert result['pair_gross_budget'] - result['actual_gross_exposure'] <= (
+        100.0 + (1.0 + 0.4) * 50.0
     )
     actual_hr = result['size1'] * 100.0 / (result['size2'] * 50.0)
     assert math.isclose(actual_hr, 0.4, rel_tol=0.005)
@@ -95,6 +111,9 @@ def test_gross_exposure_sizing_preserves_hr_above_one_after_rounding():
     assert math.isclose(
         result['actual_gross_exposure'], result['pair_gross_budget'], rel_tol=0.001
     )
+    assert result['pair_gross_budget'] - result['actual_gross_exposure'] <= (
+        100.0 + (1.0 + 1.8) * 50.0
+    )
     actual_hr = result['size1'] * 100.0 / (result['size2'] * 50.0)
     assert math.isclose(actual_hr, 1.8, rel_tol=0.005)
 
@@ -114,6 +133,9 @@ def test_gross_exposure_raw_space_uses_the_budget_with_share_hedge_math():
     assert result['actual_gross_exposure'] <= result['pair_gross_budget']
     assert math.isclose(
         result['actual_gross_exposure'], result['pair_gross_budget'], rel_tol=0.001
+    )
+    assert result['pair_gross_budget'] - result['actual_gross_exposure'] <= (
+        50.0 + 100.0 + 0.4 * 50.0
     )
     actual_hr = result['size1'] / result['size2']
     assert math.isclose(actual_hr, 0.4, rel_tol=0.005)
@@ -205,9 +227,12 @@ def test_trade_metadata_records_actual_gross_exposure_and_daily_diagnostics():
     assert len(result.trade_logs) == 1
     trade = result.trade_logs[0]
     required = {
-        'pair_sizing_mode', 'hr_entry', 'target_notional', 'pair_gross_budget',
+        'pair_sizing_mode', 'sizing_capital', 'sizing_budget', 'hr_entry',
+        'reference_leg_notional', 'target_notional', 'pair_gross_budget',
         'pair_gross_budget_enforced',
-        'size1', 'size2', 'entry_price1', 'entry_price2',
+        'size1', 'size2', 'sizing_price1', 'sizing_price2',
+        'sizing_log_space', 'sizing_dollar_neutral',
+        'entry_price1', 'entry_price2', 'sizing_gross_exposure',
         'leg1_entry_exposure', 'leg2_entry_exposure', 'gross_entry_exposure',
         'long_entry_exposure', 'short_entry_exposure',
         'estimated_initial_margin_requirement',
@@ -215,6 +240,20 @@ def test_trade_metadata_records_actual_gross_exposure_and_daily_diagnostics():
     }
     assert required <= trade.keys()
     assert trade['pair_sizing_mode'] == 'gross_exposure'
+    assert trade['sizing_capital'] == 1_000_000.0
+    assert trade['sizing_budget'] == 250_000.0
+    assert math.isclose(
+        trade['reference_leg_notional'],
+        trade['sizing_budget'] / (1.0 + abs(trade['hr_entry'])),
+    )
+    assert trade['target_notional'] == trade['sizing_budget']
+    assert trade['pair_gross_budget'] == trade['sizing_budget']
+    assert trade['sizing_log_space'] is True
+    assert trade['sizing_dollar_neutral'] is False
+    assert trade['sizing_gross_exposure'] == (
+        trade['size1'] * trade['sizing_price1']
+        + trade['size2'] * trade['sizing_price2']
+    )
     assert trade['pair_gross_budget_enforced'] is True
     assert trade['gross_entry_exposure'] == (
         trade['leg1_entry_exposure'] + trade['leg2_entry_exposure']
@@ -270,3 +309,60 @@ def test_exposure_summary_merges_fold_accounts_before_calculating_ratios():
     assert summary['average_open_pairs'] == 1.5
     assert summary['peak_open_pairs'] == 3
     assert summary['peak_margin_utilization'] == 0.225
+
+
+def test_capacity_models_keep_funded_and_margin_headroom_separate():
+    capacity = assess_capacity(
+        current_equity=100.0,
+        current_gross_exposure=60.0,
+        existing_initial_margin=20.0,
+        desired_gross_exposure=50.0,
+        desired_initial_margin=30.0,
+    )
+
+    assert capacity['fully_funded_free_capacity'] == 40.0
+    assert capacity['fully_funded_excess'] == 10.0
+    assert capacity['fully_funded_fits'] is False
+    assert capacity['free_margin'] == 80.0
+    assert capacity['margin_excess'] == 0.0
+    assert capacity['margin_fits'] is True
+
+
+def test_margin_requirement_uses_side_specific_rates():
+    assert margin_requirement(
+        10, 20, 100, 50, 'long', 'short', margin_long=0.50,
+        margin_short=0.25,
+    ) == 750.0
+
+
+def test_sequential_capacity_ledger_reserves_admitted_same_day_entries():
+    frame = pd.DataFrame([
+        {
+            'fold_id': 1,
+            'date': '2024-01-02',
+            'audit_sequence': 1,
+            'pair': 'A-B',
+            'pair_index': 0,
+            'fully_funded_free_capacity': 100.0,
+            'free_margin': 100.0,
+            'naive_dynamic_gross_exposure': 60.0,
+            'naive_dynamic_initial_margin_required': 70.0,
+        },
+        {
+            'fold_id': 1,
+            'date': '2024-01-02',
+            'audit_sequence': 2,
+            'pair': 'C-D',
+            'pair_index': 1,
+            'fully_funded_free_capacity': 100.0,
+            'free_margin': 100.0,
+            'naive_dynamic_gross_exposure': 50.0,
+            'naive_dynamic_initial_margin_required': 40.0,
+        },
+    ])
+
+    funded = sequential_capacity_ledger(frame, 'fully_funded')
+    margin = sequential_capacity_ledger(frame, 'margin')
+
+    assert funded['admitted'].tolist() == [True, False]
+    assert margin['admitted'].tolist() == [True, False]

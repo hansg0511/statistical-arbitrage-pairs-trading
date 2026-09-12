@@ -36,6 +36,7 @@ SNAPSHOTS = ARCHIVE / 'pct25_comparison_audit' / 'snapshots'
 POOLS = ROOT / 'research' / 'cache'
 EARNINGS_CACHE = ARCHIVE / 'earnings_cache' / 'earnings_dates.pkl'
 OUTPUT_ROOT = ROOT / 'results' / 'sizing_v2'
+SUMMARY_ROOT = ROOT / 'results' / 'sizing_v2_summary'
 
 
 PROFILES = {
@@ -169,6 +170,7 @@ def _load_run(path: Path):
     daily = _read_csv(path / 'daily_returns.csv', ('date',))
     marks = _read_csv(path / 'trade_marks.csv', ('date',))
     exposure = _read_csv(path / 'daily_exposure.csv', ('date',))
+    sizing_audit = _read_csv(path / 'sizing_audit.csv', ('date',))
     selected = _read_csv(path / 'selected_pairs.csv')
     signal = _read_csv(path / 'signal_log.csv', ('date',))
     rejected = _read_csv(path / 'rejected_orders.csv', ('date',))
@@ -178,6 +180,7 @@ def _load_run(path: Path):
         'daily': daily,
         'marks': marks,
         'exposure': exposure,
+        'sizing_audit': sizing_audit,
         'selected': selected,
         'signal': signal,
         'rejected': rejected,
@@ -354,6 +357,9 @@ def _metric_row(profile_name, mode, run):
         'average_gross_utilization': float(
             metrics.get('average_gross_utilization', 0.0)
         ),
+        'median_gross_utilization': float(
+            metrics.get('median_gross_utilization', 0.0)
+        ),
         'gross_utilization_p95': float(
             metrics.get('gross_utilization_p95', 0.0)
         ),
@@ -443,6 +449,26 @@ def _rejection_key(row):
     )
 
 
+def _changed_exit_reasons(left, right):
+    def reasons(frame):
+        output = {}
+        for _, row in frame.iterrows():
+            output.setdefault(_entry_key(row), Counter())[str(row['exit_reason'])] += 1
+        return output
+
+    left_reasons = reasons(left)
+    right_reasons = reasons(right)
+    changes = []
+    for key in sorted(set(left_reasons) | set(right_reasons), key=repr):
+        if left_reasons.get(key, Counter()) != right_reasons.get(key, Counter()):
+            changes.append({
+                'entry_key': list(key),
+                'v1_exit_reasons': dict(left_reasons.get(key, Counter())),
+                'v2_exit_reasons': dict(right_reasons.get(key, Counter())),
+            })
+    return changes
+
+
 def _selection_keys(frame):
     if frame.empty:
         return []
@@ -521,6 +547,7 @@ def _compare_trades(v1, v2):
     c2 = Counter(v2_keys)
     v1_only = list((c1 - c2).elements())
     v2_only = list((c2 - c1).elements())
+    changed_exit_reasons = _changed_exit_reasons(v1['trades'], v2['trades'])
     entry_v1 = [_entry_key(row) for _, row in v1['trades'].iterrows()]
     entry_v2 = [_entry_key(row) for _, row in v2['trades'].iterrows()]
     selected_same = _selection_keys(v1['selected']) == _selection_keys(v2['selected'])
@@ -541,8 +568,10 @@ def _compare_trades(v1, v2):
         'v1_trade_count': len(v1_keys),
         'v2_trade_count': len(v2_keys),
         'common_trade_count': sum((c1 & c2).values()),
+        'exact_trade_match_count': sum((c1 & c2).values()),
         'v1_only_trades': v1_only,
         'v2_only_trades': v2_only,
+        'changed_exit_reasons': changed_exit_reasons,
         'entry_keys_match': Counter(entry_v1) == Counter(entry_v2),
         'selected_pair_keys_match': selected_same,
         'signal_input_comparison': signal,
@@ -561,6 +590,25 @@ def _compare_trades(v1, v2):
     }
 
 
+def _distribution(values, default=0.0):
+    values = pd.to_numeric(values, errors='coerce').dropna()
+    if values.empty:
+        return {
+            'mean': default,
+            'median': default,
+            'p95': default,
+            'min': default,
+            'max': default,
+        }
+    return {
+        'mean': float(values.mean()),
+        'median': float(values.median()),
+        'p95': float(values.quantile(0.95)),
+        'min': float(values.min()),
+        'max': float(values.max()),
+    }
+
+
 def _sizing_row(profile_name, mode, run):
     trades = run['trades']
     if trades.empty:
@@ -570,7 +618,7 @@ def _sizing_row(profile_name, mode, run):
             'budget_basis': (
                 'pair_gross_budget'
                 if mode == 'gross_exposure'
-                else 'reference_notional_baseline'
+                else 'sizing_budget_reference_leg'
             ),
             'trades': 0,
             'mean_hr_abs': 0.0,
@@ -581,18 +629,99 @@ def _sizing_row(profile_name, mode, run):
             'gross_entry_peak_ratio': 0.0,
             'mean_gross_entry_exposure': 0.0,
             'mean_pair_gross_budget': 0.0,
+            'mean_abs_budget_error': float('nan'),
+            'median_abs_budget_error': float('nan'),
+            'p95_abs_budget_error': float('nan'),
+            'max_abs_budget_error': float('nan'),
+            'mean_abs_sizing_budget_error': float('nan'),
+            'median_abs_sizing_budget_error': float('nan'),
+            'p95_abs_sizing_budget_error': float('nan'),
+            'max_abs_sizing_budget_error': float('nan'),
+            'sizing_budget_rounding_violation_count': 0,
+            'max_sizing_budget_rounding_excess': float('nan'),
+            'gross_budget_overrun_count': 0,
+            'max_gross_budget_overrun': float('nan'),
+            'sizing_budget_invariant_status': 'not_applicable',
+            'mean_abs_hedge_ratio_error': 0.0,
+            'median_abs_hedge_ratio_error': 0.0,
+            'p95_abs_hedge_ratio_error': 0.0,
+            'max_abs_hedge_ratio_error': 0.0,
         }
     hr = pd.to_numeric(trades['hr_entry'], errors='coerce').abs()
     gross = pd.to_numeric(trades['gross_entry_exposure'], errors='coerce')
     budget = pd.to_numeric(trades['pair_gross_budget'], errors='coerce')
     ratio = gross / budget.replace(0, np.nan)
+    size1 = pd.to_numeric(trades['size1'], errors='coerce')
+    size2 = pd.to_numeric(trades['size2'], errors='coerce')
+    price1 = pd.to_numeric(trades['entry_price1'], errors='coerce')
+    price2 = pd.to_numeric(trades['entry_price2'], errors='coerce')
+    sizing_price1 = pd.to_numeric(
+        trades.get('sizing_price1', price1), errors='coerce'
+    )
+    sizing_price2 = pd.to_numeric(
+        trades.get('sizing_price2', price2), errors='coerce'
+    )
+    if run['metrics'].get('log_space', True):
+        actual_hr = (size1 * sizing_price1) / (
+            size2 * sizing_price2
+        ).replace(0, np.nan)
+    else:
+        actual_hr = size1 / size2.replace(0, np.nan)
+    hr_error = (actual_hr.abs() - hr).abs()
+    budget_error = (
+        (gross - budget).abs()
+        if mode == 'gross_exposure'
+        else pd.Series(dtype=float)
+    )
+    sizing_gross = pd.to_numeric(
+        trades.get('sizing_gross_exposure', gross), errors='coerce'
+    )
+    sizing_budget_error = (
+        (sizing_gross - budget).abs()
+        if mode == 'gross_exposure'
+        else pd.Series(dtype=float)
+    )
+    if mode == 'gross_exposure':
+        # The bound covers the discarded fractional share of each leg and the
+        # reference-leg conversion before integer rounding.
+        if run['metrics'].get('log_space', True):
+            rounding_tolerance = price1 + (1.0 + hr) * price2
+        else:
+            rounding_tolerance = price1 + price2 + hr * price1
+        rounding_excess = (
+            sizing_budget_error - rounding_tolerance
+        ).clip(lower=0.0)
+        rounding_violations = (
+            sizing_budget_error > rounding_tolerance + 1e-9
+        )
+        gross_overrun = (sizing_gross - budget).clip(lower=0.0)
+        rounding_violation_count = int(rounding_violations.sum())
+        max_rounding_excess = float(rounding_excess.max())
+        gross_overrun_count = int((gross_overrun > 1e-9).sum())
+        max_gross_overrun = float(gross_overrun.max())
+        invariant_status = (
+            'pass'
+            if rounding_violation_count == 0 and gross_overrun_count == 0
+            else 'fail'
+        )
+    else:
+        rounding_violation_count = 0
+        max_rounding_excess = float('nan')
+        gross_overrun_count = 0
+        max_gross_overrun = float('nan')
+        invariant_status = 'not_applicable'
+    budget_error_stats = _distribution(budget_error, default=float('nan'))
+    sizing_budget_error_stats = _distribution(
+        sizing_budget_error, default=float('nan')
+    )
+    hr_error_stats = _distribution(hr_error)
     return {
         'profile': profile_name,
         'mode': mode,
         'budget_basis': (
             'pair_gross_budget'
             if mode == 'gross_exposure'
-            else 'reference_notional_baseline'
+            else 'sizing_budget_reference_leg'
         ),
         'trades': int(len(trades)),
         'mean_hr_abs': float(hr.mean()),
@@ -603,6 +732,23 @@ def _sizing_row(profile_name, mode, run):
         'gross_entry_peak_ratio': float(ratio.max()),
         'mean_gross_entry_exposure': float(gross.mean()),
         'mean_pair_gross_budget': float(budget.mean()),
+        'mean_abs_budget_error': budget_error_stats['mean'],
+        'median_abs_budget_error': budget_error_stats['median'],
+        'p95_abs_budget_error': budget_error_stats['p95'],
+        'max_abs_budget_error': budget_error_stats['max'],
+        'mean_abs_sizing_budget_error': sizing_budget_error_stats['mean'],
+        'median_abs_sizing_budget_error': sizing_budget_error_stats['median'],
+        'p95_abs_sizing_budget_error': sizing_budget_error_stats['p95'],
+        'max_abs_sizing_budget_error': sizing_budget_error_stats['max'],
+        'sizing_budget_rounding_violation_count': rounding_violation_count,
+        'max_sizing_budget_rounding_excess': max_rounding_excess,
+        'gross_budget_overrun_count': gross_overrun_count,
+        'max_gross_budget_overrun': max_gross_overrun,
+        'sizing_budget_invariant_status': invariant_status,
+        'mean_abs_hedge_ratio_error': hr_error_stats['mean'],
+        'median_abs_hedge_ratio_error': hr_error_stats['median'],
+        'p95_abs_hedge_ratio_error': hr_error_stats['p95'],
+        'max_abs_hedge_ratio_error': hr_error_stats['max'],
     }
 
 
@@ -707,6 +853,7 @@ def main(argv=None):
     comparison[
         [
             'profile', 'mode', 'average_gross_utilization',
+            'median_gross_utilization',
             'gross_utilization_p95', 'gross_utilization_p99',
             'peak_gross_utilization', 'average_margin_utilization',
             'margin_utilization_p95', 'margin_utilization_p99',
@@ -721,10 +868,60 @@ def main(argv=None):
     with (OUTPUT_ROOT / 'trade_comparison.json').open('w', encoding='utf-8') as handle:
         json.dump(trade_comparisons, handle, indent=2, default=str)
 
+    trade_summary = pd.DataFrame([
+        {
+            'profile': profile_name,
+            'exact_trade_match_count': result['exact_trade_match_count'],
+            'v1_only_trade_count': len(result['v1_only_trades']),
+            'v2_only_trade_count': len(result['v2_only_trades']),
+            'changed_exit_reason_count': len(result['changed_exit_reasons']),
+            'entry_keys_match': result['entry_keys_match'],
+            'selected_pair_keys_match': result['selected_pair_keys_match'],
+            'decision_status': result['decision_status'],
+            'public_reference_status': result[
+                'public_reference_comparison'
+            ]['status'],
+        }
+        for profile_name, result in trade_comparisons.items()
+    ])
+    review = comparison.merge(sizing, on=['profile', 'mode'], how='left')
+    review = review.merge(trade_summary, on='profile', how='left')
+    SUMMARY_ROOT.mkdir(parents=True, exist_ok=True)
+    review_columns = [
+        'profile', 'mode', 'annualized_return', 'sharpe', 'volatility',
+        'max_drawdown', 'trade_count', 'win_rate',
+        'average_gross_utilization', 'median_gross_utilization',
+        'gross_utilization_p95', 'gross_utilization_p99',
+        'peak_gross_utilization', 'average_margin_utilization',
+        'margin_utilization_p95', 'peak_margin_utilization',
+        'budget_basis', 'mean_budget_ratio', 'median_budget_ratio',
+        'gross_entry_p95_ratio', 'gross_entry_peak_ratio',
+        'mean_gross_entry_exposure', 'mean_pair_gross_budget',
+        'mean_abs_budget_error',
+        'median_abs_budget_error', 'p95_abs_budget_error',
+        'max_abs_budget_error', 'mean_abs_hedge_ratio_error',
+        'median_abs_hedge_ratio_error', 'p95_abs_hedge_ratio_error',
+        'max_abs_hedge_ratio_error', 'mean_abs_sizing_budget_error',
+        'median_abs_sizing_budget_error', 'p95_abs_sizing_budget_error',
+        'max_abs_sizing_budget_error',
+        'sizing_budget_rounding_violation_count',
+        'max_sizing_budget_rounding_excess', 'gross_budget_overrun_count',
+        'max_gross_budget_overrun', 'sizing_budget_invariant_status',
+        'exact_trade_match_count',
+        'v1_only_trade_count', 'v2_only_trade_count',
+        'changed_exit_reason_count', 'entry_keys_match',
+        'selected_pair_keys_match', 'decision_status',
+        'public_reference_status',
+    ]
+    review[review_columns].to_csv(
+        SUMMARY_ROOT / 'v1_vs_v2_metrics.csv', index=False
+    )
+
     delta_rows = []
     metric_columns = [
         'annualized_return', 'sharpe', 'volatility', 'max_drawdown',
         'trade_count', 'win_rate', 'average_gross_utilization',
+        'median_gross_utilization',
         'gross_utilization_p95', 'gross_utilization_p99',
         'peak_gross_utilization', 'average_margin_utilization',
         'margin_utilization_p95', 'margin_utilization_p99',
@@ -750,7 +947,8 @@ def main(argv=None):
     display_columns = [
         'profile', 'mode', 'annualized_return', 'sharpe', 'volatility',
         'max_drawdown', 'trade_count', 'win_rate',
-        'average_gross_utilization', 'gross_utilization_p95',
+        'average_gross_utilization', 'median_gross_utilization',
+        'gross_utilization_p95',
         'peak_gross_utilization', 'average_margin_utilization',
         'peak_margin_utilization', 'peak_maintenance_margin_utilization',
     ]

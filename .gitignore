@@ -37,3 +37,8 @@ results/final/*
 !results/final/figures/
 !results/final/figures/*.png
 !results/final/manifest.json
+
+# Keep only compact V2 sizing review artifacts; raw experiment trees stay ignored.
+!results/sizing_v2_summary/
+!results/sizing_v2_summary/v1_vs_v2_metrics.csv
+!results/sizing_v2_summary/sizing_capital_audit.csv

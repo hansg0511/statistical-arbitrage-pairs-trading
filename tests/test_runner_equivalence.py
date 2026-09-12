@@ -79,7 +79,7 @@ def _inputs(tmp_path):
 
 def _normalize(result):
     (summary, logs, daily_returns, active, rejected, marks, signal, margin,
-     exposure, selected, _) = result
+     exposure, sizing_audit, selected, _) = result
     return {
         "summary": summary,
         "logs": logs,
@@ -90,6 +90,7 @@ def _normalize(result):
         "signal": signal,
         "margin": margin,
         "exposure": exposure,
+        "sizing_audit": sizing_audit,
         "selected": selected,
     }
 

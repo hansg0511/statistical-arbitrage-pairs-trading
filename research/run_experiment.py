@@ -157,7 +157,7 @@ def _clear_run_outputs(output_dir, trade_logs_dir):
         'metrics.json', 'oos_fold_summary.csv', 'daily_returns.csv',
         'daily_returns_active_only.csv', 'trade_marks.csv',
         'rejected_orders.csv', 'signal_log.csv', 'daily_margin.csv',
-        'daily_exposure.csv', 'selected_pairs.csv',
+        'daily_exposure.csv', 'sizing_audit.csv', 'selected_pairs.csv',
         'run.log', 'run_status.json', 'run_status.json.tmp',
     ]
     for filename in filenames:
@@ -240,6 +240,11 @@ def _collect_results(cerebro, i, test_start, test_end, output_lines,
         rec['fold_id'] = i
         daily_exposure.append(rec)
 
+    sizing_audit = []
+    for rec in getattr(res, 'sizing_audit', []):
+        rec['fold_id'] = i
+        sizing_audit.append(rec)
+
     selected_pair_rows = []
     for record in selected_pairs or []:
         record['fold_id'] = i
@@ -254,7 +259,7 @@ def _collect_results(cerebro, i, test_start, test_end, output_lines,
 
     return (fold_summary, logs, daily_returns, daily_active_counts,
             rejected_orders, trade_marks, signal_log, daily_margin,
-            daily_exposure, selected_pair_rows, output_lines)
+            daily_exposure, sizing_audit, selected_pair_rows, output_lines)
 
 
 def _collect_zero_pair_fold(
@@ -303,7 +308,7 @@ def _collect_zero_pair_fold(
     }
     return (
         fold_summary, [], daily_returns, daily_active_counts,
-        [], [], [], [], daily_exposure, [], output_lines,
+        [], [], [], [], daily_exposure, [], [], output_lines,
     )
 
 def _process_fold_coint(i, fold, g):
@@ -391,7 +396,7 @@ def _process_fold_coint(i, fold, g):
     top_pairs = pd.DataFrame(filtered_rows).head(args.max_pairs)
     if top_pairs.empty:
         output_lines.append(f"No pairs with sufficient test-window data for fold {i}")
-        return (None, [], [], [], [], [], [], [], [], [], output_lines)
+        return (None, [], [], [], [], [], [], [], [], [], [], output_lines)
     output_lines.append(f"Selected {len(top_pairs)} pairs: {', '.join(top_pairs['pair'].tolist())}")
 
     # Setup Backtest
@@ -463,7 +468,7 @@ def _process_fold_coint(i, fold, g):
 
     if data_count == 0:
         output_lines.append(f"No data available for selected pairs in fold {i} test window.")
-        return (None, [], [], [], [], [], [], [], [], [], output_lines)
+        return (None, [], [], [], [], [], [], [], [], [], [], output_lines)
 
     cerebro.addstrategy(
         PairTradingStrategy,
@@ -643,6 +648,7 @@ def run_experiment(argv=None):
     all_signal_log = []
     all_daily_margin = []
     all_daily_exposure = []
+    all_sizing_audit = []
     all_selected_pairs = []
     all_output = {}
     failed_folds = []
@@ -656,7 +662,7 @@ def run_experiment(argv=None):
         if i in failed_folds:
             continue
         (fold_summary, logs, daily_returns, active_counts, rejected, marks,
-         signal_log, daily_margin, daily_exposure, selected_pairs,
+         signal_log, daily_margin, daily_exposure, sizing_audit, selected_pairs,
          output_lines) = result
         if fold_summary is not None:
             all_fold_summaries.append(fold_summary)
@@ -668,6 +674,7 @@ def run_experiment(argv=None):
         all_signal_log.extend(signal_log)
         all_daily_margin.extend(daily_margin)
         all_daily_exposure.extend(daily_exposure)
+        all_sizing_audit.extend(sizing_audit)
         all_selected_pairs.extend(selected_pairs)
 
     for i in sorted(all_output):
@@ -712,6 +719,11 @@ def run_experiment(argv=None):
     if all_daily_exposure:
         pd.DataFrame(all_daily_exposure).to_csv(
             os.path.join(args.output, "daily_exposure.csv"), index=False
+        )
+
+    if all_sizing_audit:
+        pd.DataFrame(all_sizing_audit).to_csv(
+            os.path.join(args.output, "sizing_audit.csv"), index=False
         )
 
     if all_selected_pairs:
@@ -907,6 +919,8 @@ def run_experiment(argv=None):
             metrics['margin_behavior'] = str(args.margin_behavior)
             metrics['margin_long'] = float(args.margin_long)
             metrics['margin_short'] = float(args.margin_short)
+            metrics['maintenance_long'] = float(args.maintenance_long)
+            metrics['maintenance_short'] = float(args.maintenance_short)
             if price_snapshot:
                 metrics['price_snapshot'] = price_snapshot['path']
                 metrics['price_snapshot_sha256'] = price_snapshot['sha256']

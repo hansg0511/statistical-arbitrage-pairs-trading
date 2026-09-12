@@ -22,14 +22,15 @@ def calculate_pair_sizes(
 ):
     """Calculate entry share quantities for one pair.
 
-    ``reference_leg`` deliberately contains the canonical sizing branches. Its
-    ``reference_notional`` is also retained as the PnL normalization unit for
-    replay compatibility. ``gross_exposure`` uses that same sizing capital to
-    request a total two-leg gross budget, then applies the existing hedge-ratio
-    share conversion before integer rounding. In reference-leg mode,
-    ``pair_gross_budget`` is populated with the reference notional only as a
-    comparison baseline; ``pair_gross_budget_enforced`` distinguishes it from
-    the V2 cap.
+    ``reference_leg`` deliberately contains the canonical sizing branches.
+    ``sizing_budget`` is the reference-leg budget and the hedge leg is
+    additional exposure. ``gross_exposure`` uses that same sizing budget as a
+    total two-leg gross budget, then applies the existing hedge-ratio share
+    conversion before integer rounding. ``target_notional`` is retained as a
+    legacy PnL normalization unit and equals ``sizing_budget`` in both modes.
+    In reference-leg mode, ``pair_gross_budget`` is a comparison baseline, not
+    an enforced cap; ``pair_gross_budget_enforced`` distinguishes it from the
+    V2 cap.
 
     Gross sizing is incompatible with ``dollar_neutral`` because that option is
     itself a different two-leg allocation rule. Invalid gross inputs return a
@@ -46,22 +47,24 @@ def calculate_pair_sizes(
         equity_fraction = float(equity_fraction)
         p1 = float(price1)
         p2 = float(price2)
-        reference_notional = sizing_capital * equity_fraction
+        sizing_budget = sizing_capital * equity_fraction
     except (TypeError, ValueError):
-        p1 = p2 = reference_notional = float('nan')
+        sizing_capital = float('nan')
+        p1 = p2 = sizing_budget = float('nan')
 
     budget_enforced = pair_sizing_mode == 'gross_exposure'
 
-    def rejected(reason, reference_leg_target_notional=None):
+    def rejected(reason, reference_leg_notional=None):
         return {
             'valid': False,
             'reason': reason,
             'pair_sizing_mode': pair_sizing_mode,
-            'reference_notional': reference_notional,
-            'target_notional': reference_notional,
-            'pair_gross_budget': reference_notional,
+            'sizing_capital': sizing_capital,
+            'sizing_budget': sizing_budget,
+            'reference_leg_notional': reference_leg_notional,
+            'target_notional': sizing_budget,
+            'pair_gross_budget': sizing_budget,
             'pair_gross_budget_enforced': budget_enforced,
-            'reference_leg_target_notional': reference_leg_target_notional,
             'size1': 0,
             'size2': 0,
             'actual_gross_exposure': 0.0,
@@ -72,8 +75,8 @@ def calculate_pair_sizes(
         or not math.isfinite(p2)
         or p1 <= 0
         or p2 <= 0
-        or not math.isfinite(reference_notional)
-        or reference_notional <= 0
+        or not math.isfinite(sizing_budget)
+        or sizing_budget <= 0
     ):
         return rejected('invalid_sizing_input')
 
@@ -88,13 +91,13 @@ def calculate_pair_sizes(
                 return rejected('invalid_hedge_ratio')
 
         if dollar_neutral:
-            size1 = int(reference_notional / p1)
-            size2 = int(reference_notional / p2)
+            size1 = int(sizing_budget / p1)
+            size2 = int(sizing_budget / p2)
         elif log_space:
-            size2 = int(reference_notional / p2)
+            size2 = int(sizing_budget / p2)
             size1 = int(abs(size2 * hr_entry * (p2 / p1)))
         else:
-            size2 = int(reference_notional / p2)
+            size2 = int(sizing_budget / p2)
             size1 = int(abs(size2 * hr_entry))
 
         valid = size1 > 0 and size2 > 0
@@ -103,11 +106,12 @@ def calculate_pair_sizes(
             'valid': valid,
             'reason': None if valid else 'zero_size',
             'pair_sizing_mode': pair_sizing_mode,
-            'reference_notional': reference_notional,
-            'target_notional': reference_notional,
-            'pair_gross_budget': reference_notional,
+            'sizing_capital': sizing_capital,
+            'sizing_budget': sizing_budget,
+            'reference_leg_notional': sizing_budget,
+            'target_notional': sizing_budget,
+            'pair_gross_budget': sizing_budget,
             'pair_gross_budget_enforced': False,
-            'reference_leg_target_notional': reference_notional,
             'size1': size1,
             'size2': size2,
             'actual_gross_exposure': size1 * p1 + size2 * p2,
@@ -118,7 +122,7 @@ def calculate_pair_sizes(
             'gross_exposure pair sizing requires dollar_neutral=False'
         )
 
-    pair_gross_budget = reference_notional
+    pair_gross_budget = sizing_budget
     try:
         hr = float(hr_entry)
     except (TypeError, ValueError):
@@ -129,8 +133,8 @@ def calculate_pair_sizes(
 
     hr_abs = abs(hr)
     if log_space:
-        reference_leg_target_notional = pair_gross_budget / (1.0 + hr_abs)
-        size2 = int(reference_leg_target_notional / p2)
+        reference_leg_notional = pair_gross_budget / (1.0 + hr_abs)
+        size2 = int(reference_leg_notional / p2)
         # Preserve the canonical log-space hedge conversion exactly; only its
         # reference-leg input notional changes under gross sizing.
         size1 = int(abs(size2 * hr * (p2 / p1)))
@@ -139,7 +143,7 @@ def calculate_pair_sizes(
         # solve the gross-budget equation in shares instead of under-allocating
         # when the two leg prices differ.
         per_reference_share = p2 + hr_abs * p1
-        reference_leg_target_notional = (
+        reference_leg_notional = (
             pair_gross_budget * p2 / per_reference_share
         )
         size2 = int(pair_gross_budget / per_reference_share)
@@ -176,11 +180,12 @@ def calculate_pair_sizes(
         'valid': valid,
         'reason': None if valid else 'zero_size',
         'pair_sizing_mode': pair_sizing_mode,
-        'reference_notional': reference_notional,
-        'target_notional': reference_notional,
+        'sizing_capital': sizing_capital,
+        'sizing_budget': sizing_budget,
+        'reference_leg_notional': reference_leg_notional,
+        'target_notional': sizing_budget,
         'pair_gross_budget': pair_gross_budget,
         'pair_gross_budget_enforced': True,
-        'reference_leg_target_notional': reference_leg_target_notional,
         'size1': size1,
         'size2': size2,
         'actual_gross_exposure': actual_gross_exposure,
@@ -296,6 +301,8 @@ class PairTradingStrategy(bt.Strategy):
         self.trade_marks = []
         self.daily_margin = []
         self.daily_exposure = []
+        self.sizing_audit = []
+        self._sizing_audit_sequence = 0
         self.signal_log = []
         self.entry_order_refs = set()
 
@@ -333,6 +340,83 @@ class PairTradingStrategy(bt.Strategy):
                 + self.p.maintenance_short * short_exposure
             ),
         })
+
+    def _record_sizing_audit(
+        self, p, pair_name, pair_index, z, hr_entry, side1, side2,
+        status, sizing=None,
+    ):
+        """Record pre-entry account state without changing order admission."""
+        long_book, short_book = self._position_book()
+        equity = float(self.broker.getvalue())
+        gross_long = float(sum(long_book.values()))
+        gross_short = float(sum(short_book.values()))
+        gross_exposure = gross_long + gross_short
+        initial_margin = float(self._required_margin(long_book, short_book))
+        maintenance_margin = float(self._maintenance_margin(long_book, short_book))
+        sizing_capital = float(self.p.initial_cash)
+        sizing_budget = sizing_capital * float(self.p.equity_fraction)
+        row = {
+            'audit_sequence': self._sizing_audit_sequence,
+            'date': self.datas[0].datetime.date(0),
+            'pair': pair_name,
+            'pair_index': int(pair_index),
+            'z': z,
+            'hr_entry': hr_entry,
+            'price1': float(p['s1'].close[0]),
+            'price2': float(p['s2'].close[0]),
+            'side1': side1,
+            'side2': side2,
+            'status': status,
+            'sizing_attempted': sizing is not None,
+            'initial_equity': sizing_capital,
+            'current_equity': equity,
+            'current_cash': float(self.broker.getcash()),
+            'gross_long': gross_long,
+            'gross_short': gross_short,
+            'current_gross_exposure': gross_exposure,
+            'current_initial_margin_required': initial_margin,
+            'current_maintenance_margin_required': maintenance_margin,
+            'current_initial_margin_utilization': (
+                initial_margin / equity if equity > 0 else 0.0
+            ),
+            'current_maintenance_margin_utilization': (
+                maintenance_margin / equity if equity > 0 else 0.0
+            ),
+            'free_funded_capacity': equity - gross_exposure,
+            'free_margin': equity - initial_margin,
+            'equity_fraction': float(self.p.equity_fraction),
+            'sizing_capital': sizing_capital,
+            'sizing_budget': sizing_budget,
+            'naive_dynamic_budget': equity * float(self.p.equity_fraction),
+            'equity_to_initial_ratio': (
+                equity / sizing_capital if sizing_capital > 0 else 0.0
+            ),
+            'naive_minus_fixed_budget': (
+                equity * float(self.p.equity_fraction) - sizing_budget
+            ),
+            'reference_leg_notional': None,
+            'pair_gross_budget': sizing_budget,
+            'fixed_size1': 0,
+            'fixed_size2': 0,
+            'fixed_gross_entry_exposure': 0.0,
+            'fixed_sizing_valid': False,
+            'fixed_sizing_reason': None,
+        }
+        if sizing is not None:
+            row.update({
+                'sizing_capital': sizing['sizing_capital'],
+                'sizing_budget': sizing['sizing_budget'],
+                'reference_leg_notional': sizing['reference_leg_notional'],
+                'pair_gross_budget': sizing['pair_gross_budget'],
+                'fixed_size1': sizing['size1'],
+                'fixed_size2': sizing['size2'],
+                'fixed_gross_entry_exposure': sizing['actual_gross_exposure'],
+                'fixed_sizing_valid': sizing['valid'],
+                'fixed_sizing_reason': sizing['reason'],
+            })
+        self.sizing_audit.append(row)
+        self._sizing_audit_sequence += 1
+        return row
 
     def _record_daily_exposure(self):
         """Record account-level gross and margin utilization from live positions."""
@@ -463,7 +547,7 @@ class PairTradingStrategy(bt.Strategy):
             'count': len(self.active_trades),
             'deployed_capital': deployed
         })
-        for p in self.pairs:
+        for pair_index, p in enumerate(self.pairs):
             pair_name = f"{p['s1']._name}-{p['s2']._name}"
             pos2 = self.getposition(p['s2']).size
             
@@ -554,6 +638,10 @@ class PairTradingStrategy(bt.Strategy):
                         invalid_hr = not math.isfinite(current_hr_value)
                         zero_hr = current_hr_value == 0 and not self.p.dollar_neutral
                         if invalid_hr or zero_hr:
+                            self._record_sizing_audit(
+                                p, pair_name, pair_index, z, current_hr,
+                                None, None, 'invalid_hedge_ratio',
+                            )
                             self.rejected_orders.append({
                                 'date': self.datas[0].datetime.date(0),
                                 'pair': pair_name,
@@ -571,7 +659,17 @@ class PairTradingStrategy(bt.Strategy):
                                 ),
                             })
                             continue
+                        if z <= -self.p.entry_z:
+                            s2_side = 'long'
+                            s1_side = 'short' if current_hr >= 0 else 'long'
+                        else:
+                            s2_side = 'short'
+                            s1_side = 'long' if current_hr >= 0 else 'short'
                         if not check_hr_stability(current_hr, anchor_hr, self.p.hr_threshold):
+                            self._record_sizing_audit(
+                                p, pair_name, pair_index, z, current_hr,
+                                s1_side, s2_side, 'hr_guard_blocked',
+                            )
                             continue
 
                         if self.p.earnings_screen is not None:
@@ -582,6 +680,10 @@ class PairTradingStrategy(bt.Strategy):
                                 or self.p.earnings_screen.has_earnings_in_window(s2_name, entry_date, self.p.max_holding_days, self.p.earnings_block_days)):
                                 if self.p.verbose:
                                     self.log(f'Earnings screen blocked {pair_name}')
+                                self._record_sizing_audit(
+                                    p, pair_name, pair_index, z, current_hr,
+                                    s1_side, s2_side, 'earnings_blocked',
+                                )
                                 continue
 
                         sizing = calculate_pair_sizes(
@@ -594,11 +696,16 @@ class PairTradingStrategy(bt.Strategy):
                             dollar_neutral=self.p.dollar_neutral,
                             pair_sizing_mode=self.p.pair_sizing_mode,
                         )
+                        sizing_audit = self._record_sizing_audit(
+                            p, pair_name, pair_index, z, current_hr,
+                            s1_side, s2_side, 'sizing_attempted', sizing,
+                        )
                         size1 = sizing['size1']
                         size2 = sizing['size2']
                         notional = sizing['target_notional']
 
                         if not sizing['valid']:
+                            sizing_audit['status'] = 'sizing_rejected'
                             self.rejected_orders.append({
                                 'date': self.datas[0].datetime.date(0),
                                 'pair': pair_name,
@@ -610,13 +717,6 @@ class PairTradingStrategy(bt.Strategy):
                                 'pair_gross_budget': sizing['pair_gross_budget'],
                             })
                             continue
-
-                        if z <= -self.p.entry_z:
-                            s2_side = 'long'
-                            s1_side = 'short' if current_hr >= 0 else 'long'
-                        else:
-                            s2_side = 'short'
-                            s1_side = 'long' if current_hr >= 0 else 'short'
 
                         if self.p.margin_behavior != 'off':
                             equity = self.broker.getvalue()
@@ -639,6 +739,7 @@ class PairTradingStrategy(bt.Strategy):
                                     'free_margin_after': free_after,
                                 })
                                 if self.p.margin_behavior == 'reject':
+                                    sizing_audit['status'] = 'margin_rejected'
                                     continue
 
                         if z <= -self.p.entry_z:
@@ -653,6 +754,7 @@ class PairTradingStrategy(bt.Strategy):
                         # (not close-orders of a successful trade).
                         self.entry_order_refs.add(o2.ref)
                         self.entry_order_refs.add(o1.ref)
+                        sizing_audit['status'] = 'orders_submitted'
 
                         self.trade_count += 1
                         self.active_trades[pair_name] = {
@@ -661,17 +763,28 @@ class PairTradingStrategy(bt.Strategy):
                             'hr_entry': current_hr, 'intercept_entry': p['intercept'][0],
                             'mu_entry': p['rolling_mean'][0], 'sigma_entry': p['rolling_std'][0],
                             # target_notional is retained as the legacy
-                            # reference-sizing unit used by replay PnL.
+                            # sizing-budget unit used by replay PnL.
                             'pair_sizing_mode': self.p.pair_sizing_mode,
-                            'reference_notional': sizing['reference_notional'],
+                            'sizing_capital': sizing['sizing_capital'],
+                            'sizing_budget': sizing['sizing_budget'],
+                            'reference_leg_notional': sizing[
+                                'reference_leg_notional'
+                            ],
+                            'sizing_price1': float(p['s1'].close[0]),
+                            'sizing_price2': float(p['s2'].close[0]),
+                            'sizing_log_space': bool(self.p.log_space),
+                            'sizing_dollar_neutral': bool(self.p.dollar_neutral),
                             'target_notional': notional,
                             'pair_gross_budget': sizing['pair_gross_budget'],
                             'pair_gross_budget_enforced': sizing[
                                 'pair_gross_budget_enforced'
                             ],
-                            'reference_leg_target_notional': sizing['reference_leg_target_notional'],
                             'planned_size1': size1,
                             'planned_size2': size2,
+                            'sizing_gross_exposure': (
+                                size1 * float(p['s1'].close[0])
+                                + size2 * float(p['s2'].close[0])
+                            ),
                             'size1': size1,
                             'size2': size2,
                             'entry_price1': float(p['s1'].close[0]),
@@ -700,13 +813,19 @@ class PairTradingStrategy(bt.Strategy):
                     'mark_pnl': self._current_pnl(p, info),
                     'target_notional': info['target_notional'],
                     'pair_sizing_mode': info['pair_sizing_mode'],
-                    'reference_notional': info['reference_notional'],
+                    'sizing_capital': info['sizing_capital'],
+                    'sizing_budget': info['sizing_budget'],
+                    'reference_leg_notional': info['reference_leg_notional'],
+                    'sizing_price1': info['sizing_price1'],
+                    'sizing_price2': info['sizing_price2'],
+                    'sizing_log_space': info['sizing_log_space'],
+                    'sizing_dollar_neutral': info['sizing_dollar_neutral'],
                     'pair_gross_budget': info['pair_gross_budget'],
                     'pair_gross_budget_enforced': info[
                         'pair_gross_budget_enforced'
                     ],
                     'gross_entry_exposure': info['gross_entry_exposure'],
-                    'pnl_per_reference_sizing_unit': (
+                    'pnl_per_sizing_budget': (
                         self._current_pnl(p, info) / info['target_notional']
                     ),
                 })
@@ -746,7 +865,7 @@ class PairTradingStrategy(bt.Strategy):
 
             # Simple PnL logging
             trade_pnl = self._current_pnl(p, info)
-            pnl_per_reference_unit = trade_pnl / info['target_notional']
+            pnl_per_sizing_budget = trade_pnl / info['target_notional']
 
             self.trade_logs.append({
                 'pair': pair_name,
@@ -755,12 +874,18 @@ class PairTradingStrategy(bt.Strategy):
                 'exit_reason': reason,
                 'pnl': trade_pnl,
                 # Retain the legacy field for replay compatibility. It is PnL
-                # per reference sizing unit, not a return on capital employed.
-                'return': pnl_per_reference_unit,
-                'pnl_per_reference_sizing_unit': pnl_per_reference_unit,
+                # per sizing-budget unit, not a return on capital employed.
+                'return': pnl_per_sizing_budget,
+                'pnl_per_sizing_budget': pnl_per_sizing_budget,
                 'pair_sizing_mode': info['pair_sizing_mode'],
+                'sizing_capital': info['sizing_capital'],
+                'sizing_budget': info['sizing_budget'],
                 'hr_entry': info['hr_entry'],
-                'reference_notional': info['reference_notional'],
+                'reference_leg_notional': info['reference_leg_notional'],
+                'sizing_price1': info['sizing_price1'],
+                'sizing_price2': info['sizing_price2'],
+                'sizing_log_space': info['sizing_log_space'],
+                'sizing_dollar_neutral': info['sizing_dollar_neutral'],
                 'target_notional': info['target_notional'],
                 'pair_gross_budget': info['pair_gross_budget'],
                 'pair_gross_budget_enforced': info[
@@ -772,6 +897,7 @@ class PairTradingStrategy(bt.Strategy):
                 'entry_price2': info['entry_price2'],
                 'leg1_entry_exposure': info['leg1_entry_exposure'],
                 'leg2_entry_exposure': info['leg2_entry_exposure'],
+                'sizing_gross_exposure': info['sizing_gross_exposure'],
                 'gross_entry_exposure': info['gross_entry_exposure'],
                 'long_entry_exposure': info['long_entry_exposure'],
                 'short_entry_exposure': info['short_entry_exposure'],
