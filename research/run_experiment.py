@@ -47,12 +47,117 @@ def _write_run_status(output_dir, status, expected_folds=None,
     os.replace(temp_path, path)
 
 
+def summarize_exposure(rows, dates=None):
+    """Summarize daily gross, open-pair, and estimated-margin utilization."""
+    if not rows:
+        return {
+            'average_gross_utilization': 0.0,
+            'median_gross_utilization': 0.0,
+            'gross_utilization_p95': 0.0,
+            'gross_utilization_p99': 0.0,
+            'peak_gross_utilization': 0.0,
+            'average_open_pairs': 0.0,
+            'peak_open_pairs': 0,
+            'average_margin_utilization': 0.0,
+            'margin_utilization_p95': 0.0,
+            'margin_utilization_p99': 0.0,
+            'peak_margin_utilization': 0.0,
+            'average_maintenance_margin_utilization': 0.0,
+            'maintenance_margin_utilization_p95': 0.0,
+            'maintenance_margin_utilization_p99': 0.0,
+            'peak_maintenance_margin_utilization': 0.0,
+        }
+
+    frame = pd.DataFrame(rows)
+    if dates is not None:
+        frame['date'] = pd.to_datetime(frame['date'])
+        frame = frame[frame['date'].isin(pd.to_datetime(dates))]
+        if frame.empty:
+            return summarize_exposure([])
+
+    # Fold outputs represent separate virtual accounts. Aggregate their dollar
+    # numerators and equity by date before calculating account-level ratios.
+    exposure_columns = {
+        'equity', 'gross_exposure', 'open_pairs',
+        'estimated_initial_margin_requirement',
+        'estimated_maintenance_margin_requirement',
+    }
+    if exposure_columns.issubset(frame.columns):
+        sum_columns = sorted(exposure_columns - {'open_pairs'}) + ['open_pairs']
+        for column in sum_columns:
+            frame[column] = pd.to_numeric(frame[column], errors='coerce').fillna(0.0)
+        frame = frame.groupby('date', as_index=False)[sum_columns].sum()
+        equity = frame['equity']
+        gross = pd.Series(
+            np.where(equity > 0, frame['gross_exposure'] / equity, 0.0),
+            index=frame.index,
+        )
+        margin = pd.Series(
+            np.where(
+                equity > 0,
+                frame['estimated_initial_margin_requirement'] / equity,
+                0.0,
+            ),
+            index=frame.index,
+        )
+        maintenance = pd.Series(
+            np.where(
+                equity > 0,
+                frame['estimated_maintenance_margin_requirement'] / equity,
+                0.0,
+            ),
+            index=frame.index,
+        )
+        open_pairs = frame['open_pairs']
+    else:
+        # Retain compatibility with older or minimal diagnostic rows.
+        gross = pd.to_numeric(frame['gross_utilization'], errors='coerce').fillna(0.0)
+        margin = pd.to_numeric(
+            frame['initial_margin_utilization'], errors='coerce'
+        ).fillna(0.0)
+        maintenance = pd.to_numeric(
+            frame['maintenance_margin_utilization'], errors='coerce'
+        ).fillna(0.0)
+        open_pairs = pd.to_numeric(frame['open_pairs'], errors='coerce').fillna(0.0)
+
+    def percentiles(values):
+        return (
+            float(values.mean()),
+            float(values.median()),
+            float(np.percentile(values, 95)),
+            float(np.percentile(values, 99)),
+            float(values.max()),
+        )
+
+    gross_stats = percentiles(gross)
+    margin_stats = percentiles(margin)
+    maintenance_stats = percentiles(maintenance)
+    return {
+        'average_gross_utilization': round(gross_stats[0], 8),
+        'median_gross_utilization': round(gross_stats[1], 8),
+        'gross_utilization_p95': round(gross_stats[2], 8),
+        'gross_utilization_p99': round(gross_stats[3], 8),
+        'peak_gross_utilization': round(gross_stats[4], 8),
+        'average_open_pairs': round(float(open_pairs.mean()), 4),
+        'peak_open_pairs': int(open_pairs.max()),
+        'average_margin_utilization': round(margin_stats[0], 8),
+        'margin_utilization_p95': round(margin_stats[2], 8),
+        'margin_utilization_p99': round(margin_stats[3], 8),
+        'peak_margin_utilization': round(margin_stats[4], 8),
+        'average_maintenance_margin_utilization': round(maintenance_stats[0], 8),
+        'maintenance_margin_utilization_p95': round(maintenance_stats[2], 8),
+        'maintenance_margin_utilization_p99': round(maintenance_stats[3], 8),
+        'peak_maintenance_margin_utilization': round(maintenance_stats[4], 8),
+    }
+
+
 def _clear_run_outputs(output_dir, trade_logs_dir):
     """Remove artifacts from an older attempt before writing a new run."""
     filenames = [
         'metrics.json', 'oos_fold_summary.csv', 'daily_returns.csv',
         'daily_returns_active_only.csv', 'trade_marks.csv',
         'rejected_orders.csv', 'signal_log.csv', 'daily_margin.csv',
+        'daily_exposure.csv', 'selected_pairs.csv',
         'run.log', 'run_status.json', 'run_status.json.tmp',
     ]
     for filename in filenames:
@@ -130,6 +235,11 @@ def _collect_results(cerebro, i, test_start, test_end, output_lines,
         rec['fold_id'] = i
         daily_margin.append(rec)
 
+    daily_exposure = []
+    for rec in getattr(res, 'daily_exposure', []):
+        rec['fold_id'] = i
+        daily_exposure.append(rec)
+
     selected_pair_rows = []
     for record in selected_pairs or []:
         record['fold_id'] = i
@@ -144,10 +254,12 @@ def _collect_results(cerebro, i, test_start, test_end, output_lines,
 
     return (fold_summary, logs, daily_returns, daily_active_counts,
             rejected_orders, trade_marks, signal_log, daily_margin,
-            selected_pair_rows, output_lines)
+            daily_exposure, selected_pair_rows, output_lines)
 
 
-def _collect_zero_pair_fold(master_df, i, test_start, test_end, output_lines):
+def _collect_zero_pair_fold(
+    master_df, i, test_start, test_end, output_lines, initial_cash=1_000_000.0
+):
     """Represent a valid formation window with no eligible pairs."""
     close_prices = master_df['Close'] if isinstance(master_df.columns, pd.MultiIndex) else master_df
     dates = [
@@ -162,6 +274,24 @@ def _collect_zero_pair_fold(master_df, i, test_start, test_end, output_lines):
         {'date': dt, 'count': 0, 'deployed_capital': 0.0, 'fold_id': i}
         for dt in dates
     ]
+    daily_exposure = [
+        {
+            'date': dt,
+            'equity': float(initial_cash),
+            'cash': float(initial_cash),
+            'gross_long': 0.0,
+            'gross_short': 0.0,
+            'gross_exposure': 0.0,
+            'gross_utilization': 0.0,
+            'open_pairs': 0,
+            'estimated_initial_margin_requirement': 0.0,
+            'initial_margin_utilization': 0.0,
+            'estimated_maintenance_margin_requirement': 0.0,
+            'maintenance_margin_utilization': 0.0,
+            'fold_id': i,
+        }
+        for dt in dates
+    ]
     output_lines.append(f"Fold {i} Complete: Sharpe=0.00, Trades=0, Rejected=0")
     fold_summary = {
         'fold': i,
@@ -173,7 +303,7 @@ def _collect_zero_pair_fold(master_df, i, test_start, test_end, output_lines):
     }
     return (
         fold_summary, [], daily_returns, daily_active_counts,
-        [], [], [], [], [], output_lines,
+        [], [], [], [], daily_exposure, [], output_lines,
     )
 
 def _process_fold_coint(i, fold, g):
@@ -234,7 +364,10 @@ def _process_fold_coint(i, fold, g):
 
     if viable_pairs.empty:
         output_lines.append(f"No viable pairs found for fold {i}")
-        return _collect_zero_pair_fold(master_df, i, test_start, test_end, output_lines)
+        return _collect_zero_pair_fold(
+            master_df, i, test_start, test_end, output_lines,
+            initial_cash=args.initial_cash,
+        )
 
     # Pre-filter pairs: ensure both tickers have sufficient test-window data
     test_data_start = str(test_start)
@@ -258,7 +391,7 @@ def _process_fold_coint(i, fold, g):
     top_pairs = pd.DataFrame(filtered_rows).head(args.max_pairs)
     if top_pairs.empty:
         output_lines.append(f"No pairs with sufficient test-window data for fold {i}")
-        return (None, [], [], [], [], [], [], [], [], output_lines)
+        return (None, [], [], [], [], [], [], [], [], [], output_lines)
     output_lines.append(f"Selected {len(top_pairs)} pairs: {', '.join(top_pairs['pair'].tolist())}")
 
     # Setup Backtest
@@ -330,7 +463,7 @@ def _process_fold_coint(i, fold, g):
 
     if data_count == 0:
         output_lines.append(f"No data available for selected pairs in fold {i} test window.")
-        return (None, [], [], [], [], [], [], [], [], output_lines)
+        return (None, [], [], [], [], [], [], [], [], [], output_lines)
 
     cerebro.addstrategy(
         PairTradingStrategy,
@@ -342,6 +475,7 @@ def _process_fold_coint(i, fold, g):
         is_stats=is_stats,
         log_space=args.log_space,
         dollar_neutral=args.dollar_neutral,
+        pair_sizing_mode=getattr(args, 'pair_sizing_mode', 'reference_leg'),
         initial_cash=args.initial_cash,
         equity_fraction=args.pct_per_pair,
         verbose=args.verbose,
@@ -508,6 +642,7 @@ def run_experiment(argv=None):
     all_rejected_orders = []
     all_signal_log = []
     all_daily_margin = []
+    all_daily_exposure = []
     all_selected_pairs = []
     all_output = {}
     failed_folds = []
@@ -521,7 +656,8 @@ def run_experiment(argv=None):
         if i in failed_folds:
             continue
         (fold_summary, logs, daily_returns, active_counts, rejected, marks,
-         signal_log, daily_margin, selected_pairs, output_lines) = result
+         signal_log, daily_margin, daily_exposure, selected_pairs,
+         output_lines) = result
         if fold_summary is not None:
             all_fold_summaries.append(fold_summary)
         all_trade_logs.extend(logs)
@@ -531,6 +667,7 @@ def run_experiment(argv=None):
         all_rejected_orders.extend(rejected)
         all_signal_log.extend(signal_log)
         all_daily_margin.extend(daily_margin)
+        all_daily_exposure.extend(daily_exposure)
         all_selected_pairs.extend(selected_pairs)
 
     for i in sorted(all_output):
@@ -571,6 +708,11 @@ def run_experiment(argv=None):
 
     if all_daily_margin:
         pd.DataFrame(all_daily_margin).to_csv(os.path.join(args.output, "daily_margin.csv"), index=False)
+
+    if all_daily_exposure:
+        pd.DataFrame(all_daily_exposure).to_csv(
+            os.path.join(args.output, "daily_exposure.csv"), index=False
+        )
 
     if all_selected_pairs:
         pd.DataFrame(all_selected_pairs).to_csv(
@@ -744,6 +886,7 @@ def run_experiment(argv=None):
                 'max_holding_days': int(args.max_holding_days),
                 'pvalue': float(args.pvalue),
                 'pct_per_pair': float(args.pct_per_pair),
+                'pair_sizing_mode': str(getattr(args, 'pair_sizing_mode', 'reference_leg')),
                 'max_pairs': int(args.max_pairs),
                 'broker_leverage': float(args.broker_leverage),
                 'log_space': bool(args.log_space),
@@ -758,6 +901,9 @@ def run_experiment(argv=None):
                 'total_days': int(total_days),
                 'days_active_lt10': int(total_lt10),
             }
+            metrics.update(summarize_exposure(
+                all_daily_exposure, dates=daily_ret_series.index
+            ))
             metrics['margin_behavior'] = str(args.margin_behavior)
             metrics['margin_long'] = float(args.margin_long)
             metrics['margin_short'] = float(args.margin_short)

@@ -38,6 +38,7 @@ _SECTION_ALIASES = {
     "portfolio": {
         "initial_cash": "initial_cash",
         "pct_per_pair": "pct_per_pair",
+        "pair_sizing_mode": "pair_sizing_mode",
         "max_pairs": "max_pairs",
         "dollar_neutral": "dollar_neutral",
         "broker_leverage": "broker_leverage",
@@ -129,6 +130,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     parser.add_argument("--initial-cash", type=float, dest="initial_cash", default=BACKTEST_SETTINGS["initial_cash"])
     parser.add_argument("--pct-per-pair", type=float, dest="pct_per_pair", default=BACKTEST_SETTINGS["pct_per_pair"])
+    parser.add_argument(
+        "--pair-sizing-mode",
+        choices=["reference_leg", "gross_exposure"],
+        dest="pair_sizing_mode",
+        default=BACKTEST_SETTINGS["pair_sizing_mode"],
+    )
     parser.add_argument("--max-pairs", type=int, dest="max_pairs", default=BACKTEST_SETTINGS["max_pairs_per_fold"])
     parser.add_argument("--broker-leverage", type=float, dest="broker_leverage", default=1.0)
     parser.add_argument("--dollar-neutral", action="store_true", default=BACKTEST_SETTINGS["dollar_neutral"])

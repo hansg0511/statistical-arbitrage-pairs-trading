@@ -17,6 +17,7 @@ STRATEGY_PARAMS = {
 BACKTEST_SETTINGS = {
     "initial_cash": 1_000_000.0,
     "pct_per_pair": 0.18,
+    "pair_sizing_mode": "reference_leg",
     "log_space": True,
     "dollar_neutral": False,
     "max_pairs_per_fold": 5,
