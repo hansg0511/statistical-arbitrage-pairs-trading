@@ -1,0 +1,9 @@
+scope,window,start_index,rebalance_months,same_direction_months,preferred_leg_flip_months,mean_abs_a_weight_difference,max_abs_a_weight_difference,different_weight_months,different_weight_pct
+run,historical,0,60,56,4,0.02666666666666667,0.4,4,6.666666666666667
+run,recent,0,24,21,3,0.05000000000000001,0.4,3,12.5
+run,recent,1,23,21,2,0.05217391304347827,0.8,2,8.695652173913043
+run,recent,2,22,17,5,0.10909090909090911,0.8,5,22.727272727272727
+run,recent,3,21,18,3,0.05714285714285715,0.4,3,14.285714285714285
+run,recent,4,20,18,2,0.06000000000000001,0.8,2,10.0
+window_all_starts,historical,all,60,56,4,0.02666666666666667,0.4,4,6.666666666666667
+window_all_starts,recent,all,110,95,15,0.06545454545454546,0.8,15,13.636363636363635
