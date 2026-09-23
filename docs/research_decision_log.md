@@ -544,3 +544,84 @@ for the historical control window without reopening the full matrix?
 `gross_exposure_matched_counterfactuals.csv`,
 `gross_exposure_summary.{json,md}`, and representative gross-exposure plots;
 branch `sizing-v2-gross-exposure`.
+
+### Research entry: Selected-book V1/V2 cross-check
+
+**Status:** completed
+
+**Question**
+
+Does the exposure-adjusted V1/V2 conclusion hold for the current V2-selected
+book and for the historical control window without reopening the full matrix?
+
+**Why this mattered**
+
+The old V1-selected book showed a positive V1 residual after matching V2's
+gross exposure. That result could have been specific to the old book rather
+than evidence about the sizing convention. The current V2 rank-average leader
+therefore had to be tested under both sizing modes using the same preserved
+trade identities.
+
+**Method**
+
+Replay the locked V1-selected book and the current V2 rank-average leader from
+the preserved full-matrix runs. The focused comparison covered five recent
+starts and one historical control start for both mechanisms A/B, or 24 focused
+groups. Reconstruct actual marked exposure, match V1 to V2 daily gross and V2
+to V1 as reverse counterfactuals, and run four forced sizing/allocator paths.
+Keep the inherited 84-day causal allocator fixed. Reconcile the compact full-
+matrix score tables, exact entry snapshots, native V2 marked exposure, trade
+identities, replay PnL, and protected outputs; do not rerun the matrix or write
+canonical outputs.
+
+**Result**
+
+For the five recent starts, the old V1-selected book had mean actual V1-minus-
+V2 final-equity gaps of `$138,604` for A and `$141,425` for B. Matching V1 to
+V2 gross reduced those gaps to `$41,079` and `$39,885`; matched V1 had higher
+Sharpe in `5/5` starts for both mechanisms. The historical control showed the
+same direction: matched gaps were `$29,289` and `$31,594`, with V1 higher in
+Sharpe in `1/1` start for both mechanisms.
+
+The current V2-selected book reversed the exposure-adjusted result. Recent
+actual V1-minus-V2 gaps were `$75,201` for A and `$69,116` for B, but after
+matching V1 to V2 they became `-$25,786` and `-$23,537`; matched V1 had higher
+Sharpe in only `1/5` starts for either mechanism. The historical control also
+favored V2 after matching, with gaps of `-$10,516` and `-$8,636` and no matched
+V1 Sharpe win.
+
+Forced allocator paths preserved the Sharpe ordering under both allocator
+paths: V1 sizing remained ahead on the old V1-selected book, while V2 sizing
+remained ahead on the current V2-selected book. Daily allocator weights
+differed on roughly 13--14% of days. Conditional attribution assigned roughly
+70--77% of the recent arithmetic/log gap to differing-weight days on average,
+but per-start shares can exceed 100% when the identical-weight component has
+the opposite sign; these are decompositions, not causal estimates.
+
+All validation checks passed. Full-matrix score reproduction differed by at
+most `2.22e-16`; entry-snapshot differences were at most `1.14e-13`; old-
+winner outputs and protected public hashes were unchanged.
+
+**Interpretation**
+
+The positive equal-gross V1 residual is selection-dependent: it persists for
+the old V1-selected book but does not generalize to the current V2-selected
+book. The focused result therefore separates sizing behavior from book
+selection and does not support calling V1 universally superior.
+
+**Decision**
+
+Keep V1 as the historical control and use V2 as the cleaner future comparison
+convention because it fixes total pair gross exposure. Do not change the
+canonical book or retune the inherited allocator from this focused result.
+
+**Next question**
+
+Validate the sizing convention on a broader out-of-sample selection set before
+making any universal performance claim.
+
+**Artifacts / branch**
+
+`research/run_selected_book_crosscheck.py` and
+`results/v1_v2_selected_book_crosscheck/`; branch
+`sizing-v2-gross-exposure`.
