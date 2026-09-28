@@ -625,3 +625,92 @@ making any universal performance claim.
 `research/run_selected_book_crosscheck.py` and
 `results/v1_v2_selected_book_crosscheck/`; branch
 `sizing-v2-gross-exposure`.
+
+### Research entry: V2-selected-book Clean40 robustness audit and retune
+
+**Status:** completed
+
+**Question**
+
+Does the inherited Clean40 allocator remain defensible for the current
+V2-selected book under V2 gross-exposure sizing, and does a small predeclared
+retune materially improve robust performance?
+
+**Why this mattered**
+
+The prior selected-book cross-check held the inherited allocator fixed. Before
+freezing the V2 comparison convention, the current book needed its own
+per-start, concentration, allocator-dependence, execution-realism, and
+parameter-robustness audit without reopening book or pair selection.
+
+**Method**
+
+Replay the preserved V2 raw runs for the current rank-average leader:
+`sp500-12m/same_sector_slide1m_noscreen` and
+`sp500-12m/same_sector_slide3m_noscreen`. Use the five recent 12-month starts
+and one historical control start, both mechanisms A/B, the fixed `$250,000`
+V2 pair gross budget, and the frozen `84`-day, `0.40`, `10%--90%` Clean40
+baseline. Audit calendar and fold PnL, trade/pair/symbol concentration,
+standalone legs, return correlation, allocator weights and movement, native
+exposure, and PnL/equity reconciliation.
+
+Evaluate a predeclared lattice-aware grid of 40 dynamic configurations using
+lookbacks `42,63,84,105,126`, steps `0.10,0.20,0.30,0.40`, and aligned
+`40/60`, `30/70`, `20/80`, and `10/90` bounds, plus a static 50/50 control.
+Select by the maximin floor of recent 20th-percentile Sharpe and historical
+Sharpe across mechanisms, with a `0.05` plateau and material-improvement
+margin. Include neighbor checks, leave-one-start-out checks, and allocator-only
+cost sensitivity at `1,5,10,20` bps. Do not rerun the 496-book matrix or write
+canonical outputs.
+
+**Result**
+
+The fixed V2 book and baseline validation passed: native V2 exposure and gross
+budgets reconciled, the baseline reproduced the prior cross-check within
+`7.92e-09` final-equity floating-point difference, trade identities were
+unchanged across allocator configurations, PnL/equity reconciled, and
+protected hashes were unchanged.
+
+The baseline mean Sharpe was `1.208` across recent starts and `0.786` on the
+historical control. Static 50/50 was stronger on recent mean Sharpe (`1.237`)
+but weaker historically (`0.503`). The selected dynamic configuration was the
+existing baseline itself, with robust floor `0.772`; the static floor was
+`0.491`. Eight dynamic configurations were within the plateau, and every
+leave-one-start-out selection returned the existing baseline. No candidate
+cleared the required `0.05` robust-floor improvement.
+
+Recent concentration was not dominated by one trade or pair, but removing the
+best trade reduced mean Sharpe to `1.115` and removing the best five reduced it
+to `0.853`. The top calendar-quarter share was `35.63%`, the top-fold share was
+`33.63%`, and `147/200` recent fold observations were positive. Leg A/B daily
+return correlation was `0.776`; the baseline spent approximately `22.4%`,
+`22.4%`, and `55.2%` of recent days at the lower bound, 50/50, and upper bound.
+
+**Interpretation**
+
+The current V2 book does not justify replacing the inherited Clean40
+configuration. Static 50/50 improves some recent paths but gives up too much
+historical robustness. The dynamic grid contains a broad plateau around the
+existing setting, but no materially superior candidate; the high recent
+Sharpe alternatives are not sufficient evidence for retuning.
+
+**Decision**
+
+Keep the existing `84`-day, `0.40`, `10%--90%` Clean40 allocator for the fixed
+V2-selected book. Keep V2 gross-exposure sizing as the future comparison
+convention, retain V1 only as the historical control, and change neither the
+book nor pair/sizing methodology. Treat paper trading with realistic costs,
+borrow, partial fills, margin, and operational reconciliation as the next
+validation gate.
+
+**Next question**
+
+Does the frozen V2-selected book and Clean40 allocator remain stable during an
+unseen paper-trading period after realistic execution costs and broker
+constraints?
+
+**Artifacts / branch**
+
+`research/run_v2_book_clean40_retune.py`,
+`tests/test_v2_book_clean40_retune.py`, and
+`results/v2_book_clean40_retune/`; branch `sizing-v2-gross-exposure`.
