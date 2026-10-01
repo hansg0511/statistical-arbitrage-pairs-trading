@@ -42,7 +42,7 @@ from research.run_selected_book_crosscheck import (  # noqa: E402
     _load_case_runs,
     _resolve_books,
 )
-from research.run_sizing_v2_full_matrix import STRATEGIES  # noqa: E402
+from research.research_config import STRATEGIES  # noqa: E402
 
 
 OUTPUT_ROOT = ROOT / "results" / "v2_book_clean40_retune"

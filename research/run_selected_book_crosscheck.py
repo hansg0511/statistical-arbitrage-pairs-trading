@@ -55,7 +55,7 @@ from research.run_old_winner_v1_v2_autopsy import (  # noqa: E402
     allocator_path,
     simulate_trace,
 )
-from research.run_sizing_v2_full_matrix import STRATEGIES  # noqa: E402
+from research.research_config import STRATEGIES  # noqa: E402
 
 
 OUTPUT_ROOT = ROOT / "results" / "v1_v2_selected_book_crosscheck"
