@@ -1,0 +1,139 @@
+{
+  "allocator": {
+    "initial_weight_leg_a": 0.5,
+    "lookback_days": 84,
+    "step": 0.4,
+    "weight_max": 0.9,
+    "weight_min": 0.1
+  },
+  "branch": "sizing-v2-gross-exposure",
+  "canonical_v1_source": {
+    "root": "results/sizing_v2_full/v1_canonical",
+    "sizing_mode": "reference_leg",
+    "source_revision": "8dc3ac60cf0ceb7c2c648dcc0d444849e5d34f5e"
+  },
+  "combined_v1_rows": 992,
+  "combined_v2_rows": 992,
+  "deterministic_inputs": {
+    "research/archive/pct25_comparison_audit/snapshots/core_historical.pkl": {
+      "sha256": "0858947a9be19c4291b244cddc192f918fb4df1a0505961059e5137d20a83669",
+      "size_bytes": 4533606
+    },
+    "research/archive/pct25_comparison_audit/snapshots/core_historical_12m.pkl": {
+      "sha256": "44092f80ea9b692098f951fd0b8eea9900f1deaf1f67a85995800732055665e9",
+      "size_bytes": 5205603
+    },
+    "research/archive/pct25_comparison_audit/snapshots/core_recent.pkl": {
+      "sha256": "c3ca1a34a687deb11f11ce71230b3ef529e59f7137794fd1ab14b21524f6d241",
+      "size_bytes": 2495952
+    },
+    "research/archive/pct25_comparison_audit/snapshots/core_recent_12m.pkl": {
+      "sha256": "3503f51d44ea43894c451ed6a686d625b299b40778d6f050f80abc1ba31b48fd",
+      "size_bytes": 3176133
+    },
+    "research/archive/pct25_comparison_audit/snapshots/sp500_historical.pkl": {
+      "sha256": "a3cea24a8471dc532653cf0a759edb9440df53384169bfd25a1c2ac0c561cc5c",
+      "size_bytes": 34267602
+    },
+    "research/archive/pct25_comparison_audit/snapshots/sp500_historical_12m.pkl": {
+      "sha256": "409c92be33e411d32ec3d612886c49fd0a2fd1d95565580a45125fb0ee774ece",
+      "size_bytes": 39347602
+    },
+    "research/archive/pct25_comparison_audit/snapshots/sp500_recent.pkl": {
+      "sha256": "96fec4515ff77cbdfad495785f3fa6beb543055e475702f5a8a1b6ff47b5df0b",
+      "size_bytes": 18734933
+    },
+    "research/archive/pct25_comparison_audit/snapshots/sp500_recent_12m.pkl": {
+      "sha256": "3b79b2a7ba56b1638d3ccccb6187f7bc551291ff058685f6e13eb98833311482",
+      "size_bytes": 23842367
+    },
+    "research/cache/core_2m.pkl": {
+      "sha256": "afcd2bf52d84ab35ba29a435c9f75acc9e19ecf63a9e84057a0bda7a9194496b",
+      "size_bytes": 5378127
+    },
+    "research/cache/sp500_12m.pkl": {
+      "sha256": "f2d3c75207fa5d5bc72475d79d713b4cedf65d96976690e4fb98a267eab5ff13",
+      "size_bytes": 603996253
+    },
+    "research/cache/sp500_2m.pkl": {
+      "sha256": "fd6ab058b5a11892413eccc5afdf2f042799f7c2996511c95fc261d71041b657",
+      "size_bytes": 1071233962
+    },
+    "research/earnings_cache/earnings_dates.pkl": {
+      "sha256": "42e923e33c6ab5814525c5b60128fe232d3a512ea07c69dcf300765817be36a4",
+      "size_bytes": 291007
+    }
+  },
+  "experiment": "full_v1_vs_v2_pair_sizing",
+  "matrix": {
+    "combined_books": 496,
+    "combined_rows_per_mode": 992,
+    "configs": [
+      "same_sector_slide3m_noscreen",
+      "same_sector_slide3m_bd7",
+      "same_sector_slide1m_noscreen",
+      "same_sector_slide1m_bd7",
+      "cross_sector_slide3m_noscreen",
+      "cross_sector_slide3m_bd7",
+      "cross_sector_slide1m_noscreen",
+      "cross_sector_slide1m_bd7"
+    ],
+    "standalone_configurations": 32,
+    "standalone_run_instances": 192,
+    "strategies": [
+      "core-2m",
+      "sp500-2m",
+      "core-12m",
+      "sp500-12m"
+    ]
+  },
+  "modes": [
+    "reference_leg",
+    "gross_exposure"
+  ],
+  "outputs": {
+    "decisions": "results/sizing_v2_full_summary/standalone_decision_comparison.csv",
+    "rank_delta": "results/sizing_v2_full_summary/combined_rank_delta.csv",
+    "report": "results/sizing_v2_full_summary/report.md",
+    "standalone": "results/sizing_v2_full_summary/standalone_v1_v2.csv",
+    "v1_rankings": "results/sizing_v2_full_summary/combined_v1_rankings.csv",
+    "v1_scores": "results/sizing_v2_full_summary/combined_v1_scores.csv",
+    "v2_rankings": "results/sizing_v2_full_summary/combined_v2_rankings.csv",
+    "v2_scores": "results/sizing_v2_full_summary/combined_v2_scores.csv"
+  },
+  "pct_per_pair": 0.25,
+  "protected_public_artifacts": {
+    "score_table": {
+      "path": "results/final/rankings/clean40_pair_scores.csv",
+      "sha256": "2fbdc86e9bc7d83f55ba5b3caac2986591565f90091fbd1eb5b391be977c5c54"
+    }
+  },
+  "public_v1_comparison": {
+    "common_rows": 992,
+    "max_abs_difference": 7.438494264988549e-15,
+    "max_abs_difference_by_column": {
+      "hist_mdd": 1.6237011735142914e-15,
+      "hist_ret": 7.077671781985373e-16,
+      "hist_sh": 7.438494264988549e-15,
+      "hist_vol": 1.942890293094024e-16,
+      "joined_ret": 5.273559366969494e-16,
+      "joined_sh": 5.329070518200751e-15,
+      "recent_mdd": 4.0245584642661925e-16,
+      "recent_ret": 4.996003610813204e-16,
+      "recent_sh": 2.7755575615628914e-15,
+      "recent_vol": 1.5265566588595902e-16,
+      "rejected_entries": 0.0
+    },
+    "public_rows": 992,
+    "rerun_rows": 992,
+    "status": "match"
+  },
+  "source_revision": "4190591c82b361eba5d2bda13fa822833e9a8fb9",
+  "standalone": {
+    "decision_changed_configurations": 0,
+    "gross_budget_invariant_failures": 0,
+    "rows": 32
+  },
+  "v2_root": "results/sizing_v2_full/v2",
+  "working_tree_dirty": true
+}
