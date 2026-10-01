@@ -34,7 +34,8 @@ The current V2 presentation uses:
 
 - `results/sizing_v2_full_summary/` for the completed full-matrix comparison;
 - `results/v1_v2_selected_book_crosscheck/` for focused selection and sizing validation; and
-- `results/v2_book_clean40_retune/` for the frozen V2-book allocator audit.
+- `results/v2_book_clean40_retune/` for the frozen V2-book allocator audit; and
+- `results/transaction_cost_analysis/` for the completed historical cost-sensitivity overlay.
 
 The tracked `results/final/` tree and
 `research/selected_book_config.json` are preserved V1 public artifacts. They are

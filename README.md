@@ -5,9 +5,9 @@ equity pairs. It covers pair formation, residual mean reversion, sizing,
 shared-account replay, portfolio selection, and robustness checks. It is not a
 broker integration or a live-trading system.
 
-The public presentation on this branch describes the latest completed V2
-gross-exposure research. The older V1 public snapshot remains in the repository
-unchanged so that the sizing comparison and audit trail remain reproducible.
+The public presentation describes the latest completed V2 gross-exposure
+research. The older V1 public snapshot remains in the repository unchanged so
+that the sizing comparison and audit trail remain reproducible.
 
 ## Research Question
 
@@ -37,8 +37,8 @@ The latest completed V2 candidate is:
 | Clean40 decision | Keep the existing allocator: `lb84_s0.40_b0.10_0.90` |
 
 The V2 candidate was selected from the completed matrix using the existing
-multi-view ranking convention. It is not a new pair-selection or signal
-parameter search performed during this documentation pass.
+multi-view ranking convention. This final presentation does not introduce a
+new pair-selection or signal-parameter search.
 
 ### Artifact Boundary
 
@@ -107,9 +107,10 @@ Public audit figures are retained with the result artifacts:
 
 ## Transaction-Cost Sensitivity
 
-The frozen candidate was also tested with a simple one-way all-in cost overlay
-on traded notional. These are means across mechanisms using the same recent and
-historical aggregation convention; they are not live execution estimates.
+The frozen candidate was tested at 0, 5, 10, and 20 bps, each an assumed
+one-way all-in execution cost on traded notional. This historical sensitivity
+overlay is not a full execution model or a live-cost estimate. Values are means
+across mechanisms using the same recent and historical aggregation convention.
 
 | Cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
 |---:|---:|---:|---:|---:|
@@ -119,10 +120,16 @@ historical aggregation convention; they are not live execution estimates.
 | 20 bps | -0.282 | -1.536 | -2.38% | -10.12% |
 
 At 5 bps, all existing recent starts and the historical control remain
-positive. At 20 bps, only 2 of 10 recent mechanism-start combinations remain
-positive and neither historical control does. Approximate recent break-even
-costs are 16.5 bps for Mechanism A and 15.2 bps for Mechanism B on a mean
-basis; the historical controls break even near 6.3--6.5 bps. See the full
+positive. At 10 bps, the recent aggregate remains positive, but one recent
+Mechanism B start and both historical controls are negative. At 20 bps, only 2
+of 10 recent mechanism-start combinations remain positive and neither
+historical control does. Approximate recent break-even costs are 16.5 bps for
+Mechanism A and 15.2 bps for Mechanism B on a mean basis; the historical
+controls break even near 6.3--6.5 bps. Recent aggregate results therefore
+remain positive through 10 bps under these assumptions, while historical
+performance is much more transaction-cost sensitive. The historical break-even
+range makes execution quality a first-order forward-deployment issue; these
+assumed rates are not estimates of realistic observed live costs. See the full
 [transaction-cost report](results/transaction_cost_analysis/tca_summary.md).
 
 ## Methodology
@@ -143,8 +150,12 @@ At a high level it:
 ## Limitations
 
 The result is a research candidate, not evidence of live profitability. The
-replay does not model commissions, spread, slippage, borrow, financing,
-partial fills, asynchronous two-leg execution, broker margin admission, or a
+base replay does not natively simulate observed execution friction. A separate
+historical transaction-cost sensitivity overlay uses assumed one-way all-in
+costs on traded notional; it is not a full execution model and does not
+estimate actual live commissions, bid/ask spread, slippage, or implementation
+shortfall. The replay and overlay do not model borrow, financing, partial
+fills, asynchronous two-leg execution, broker margin admission, or a
 deployable-capital policy. Gross leverage can exceed 1x, and pair overlap,
 calendar concentration, factor exposure, static-universe effects, and selection
 dependence remain material.
@@ -178,6 +189,9 @@ python -m pytest -q
 - [`docs/research_decision_log.md`](docs/research_decision_log.md): lower-level experiment log
 - [`results/README.md`](results/README.md): result-generation index and artifact boundaries
 
-The next meaningful validation step is disciplined paper trading with realistic
-costs, borrow, execution, margin, capacity, and reconciliation controls on
-future data.
+## Research Status
+
+Historical strategy research is frozen. No further parameter, allocator, sizing,
+or book optimization is planned using the existing research windows, including
+in response to the transaction-cost overlay. The next validation stage is
+forward paper trading with observed execution costs and operational controls.

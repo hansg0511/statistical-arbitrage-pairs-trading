@@ -11,9 +11,13 @@ paper-trading observations.
 ## Replay Is Not Broker Execution
 
 The shared-account replay is an accounting simulation over preserved trade
-events and daily marks. It does not enforce or estimate:
+events and daily marks. The base replay does not natively simulate observed
+execution friction. A separate historical transaction-cost sensitivity overlay
+uses assumed one-way all-in costs on traded notional; it is not a full execution
+model and does not estimate actual live commissions, bid/ask spread, slippage,
+or implementation shortfall. The replay and overlay do not enforce or estimate:
 
-- commissions, bid-ask spread, slippage, or financing;
+- financing;
 - borrow availability, locate failures, or borrow cost;
 - partial fills, leg asynchrony, or simultaneous execution risk;
 - broker cash settlement and margin admission;
@@ -62,8 +66,11 @@ partial fills, or broker behavior.
 
 The result is cost-sensitive: 5 bps leaves the historical control positive, but
 10 bps makes the historical control negative and 20 bps makes the recent and
-historical aggregate results negative. This is a validation warning, not a
-reason to retune the frozen strategy from the same historical windows.
+historical aggregate results negative. The historical controls break even at
+approximately 6.3--6.5 bps one-way. This is a validation warning, not a reason
+to retune the frozen strategy from the same historical windows. Historical
+strategy research is frozen; future evidence must come from forward paper
+trading.
 
 ## Metric Boundaries
 

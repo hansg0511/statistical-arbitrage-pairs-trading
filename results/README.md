@@ -67,7 +67,9 @@ overlay on the frozen V2 candidate. It contains:
 
 The 0 bps rows reproduce the Clean40 gross metrics within numerical tolerance.
 The exit-cost proxy uses exit-date close snapshots because exact exit execution
-prices are not present in the preserved compact trade logs.
+prices are not present in the preserved compact trade logs. This is not a full
+execution model; observed live implementation costs remain unknown. Historical
+research is frozen, and future validation belongs to forward paper trading.
 
 ## Historical V1 Public Snapshot
 

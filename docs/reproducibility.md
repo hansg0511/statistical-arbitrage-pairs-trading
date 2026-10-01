@@ -70,7 +70,7 @@ The V2 compact manifest records:
 
 The full raw V2 run tree is excluded because it is large and environment-bound.
 The compact matrix outputs, selected-book cross-check, and Clean40 result tree
-are the public audit boundary for this branch.
+are the public audit boundary for this presentation.
 
 ## Transaction-Cost Overlay
 
@@ -97,5 +97,5 @@ git diff --check
 ```
 
 Also inspect the generated manifest and summary files rather than trusting a
-newly rerun result. The presentation branch does not rerun the 496-book matrix,
+newly rerun result. This public presentation does not rerun the 496-book matrix,
 change pair selection, or regenerate the locked V1 public artifacts.

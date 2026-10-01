@@ -62,10 +62,11 @@ cleared the required 0.05 robust-floor improvement. The decision is therefore
 ## Transaction-Cost Sensitivity
 
 This is a historical overlay on the frozen V2 book and frozen Clean40 path. It
-charges the same one-way all-in basis-point rate at each accepted trade entry
-and exit using allocator-scaled native V2 share quantities. Exact exit execution
-prices are not logged, so exit notional uses the preserved exit-date close
-snapshot. No broker, margin, borrow, partial-fill, or execution model is added.
+evaluates exactly 0, 5, 10, and 20 bps, each an assumed one-way all-in cost on
+traded notional. The rate is charged at each accepted trade entry and exit
+using allocator-scaled native V2 share quantities. Exact exit execution prices
+are not logged, so exit notional uses the preserved exit-date close snapshot.
+No broker, margin, borrow, partial-fill, or full execution model is added.
 
 | One-way cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
 |---:|---:|---:|---:|---:|
@@ -84,8 +85,16 @@ remain positive, with neither historical control positive.
 
 Approximate recent mean break-even costs are `16.5` bps for A and `15.2` bps for
 B. Per-start ranges are `11.2--21.8` bps for A and `9.4--21.0` bps for B; the
-historical controls break even near `6.3--6.5` bps. The complete rows and
-figures are in [`results/transaction_cost_analysis/`](../results/transaction_cost_analysis/).
+historical controls break even near `6.3--6.5` bps. Recent aggregate results
+remain positive through 10 bps, while historical performance is more sensitive
+to assumed friction. The tested rates are assumptions rather than estimates of
+observed live costs, so execution quality remains a first-order forward-
+deployment question. The complete rows and figures are in
+[`results/transaction_cost_analysis/`](../results/transaction_cost_analysis/).
+
+This closes the historical research phase. The book, V2 sizing, and Clean40
+allocator are frozen; the next validation stage is forward paper trading with
+observed execution costs and operational controls.
 
 ## Metric Convention Note
 
