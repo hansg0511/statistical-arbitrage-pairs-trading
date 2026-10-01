@@ -64,6 +64,14 @@ snapshots where exact exit execution prices are unavailable. It does not
 estimate live commissions, spread, slippage, borrow, financing, market impact,
 partial fills, or broker behavior.
 
+The transaction-cost study is a sensitivity overlay rather than a full execution
+replay. Turnover is reconstructed from recorded pair-trade entry/exit notionals,
+not from fully broker-netted same-symbol account orders. Costs are overlaid on
+the preserved gross replay, and cost-reduced NAV is not fed back into subsequent
+historical sizing or allocation decisions. This is sufficient for historical
+friction sensitivity; actual execution mechanics and implementation shortfall
+remain forward-testing questions.
+
 The result is cost-sensitive: 5 bps leaves the historical control positive, but
 10 bps makes the historical control negative and 20 bps makes the recent and
 historical aggregate results negative. The historical controls break even at

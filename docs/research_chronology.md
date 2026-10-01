@@ -64,8 +64,9 @@ calendar and fold attribution, a 40-configuration lattice, static 50/50, nearby
 settings, leave-one-start-out selection, and allocator-only cost sensitivity.
 
 The existing 84-day, 0.40, 10%--90% allocator remained the defensible choice:
-robust floor 0.772, static floor 0.491, plateau size 8, and one leave-one-start-
-out selected region. The decision was `keep_old_clean40`.
+robust floor 0.772, static floor 0.491, and a plateau size of 8. The baseline
+configuration remained within the selected robust region across every leave-one-
+start-out rerun. The decision was `keep_old_clean40`.
 
 ## 8. Current Presentation Boundary
 

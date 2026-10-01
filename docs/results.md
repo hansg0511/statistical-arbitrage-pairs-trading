@@ -32,17 +32,21 @@ The full V2 report ranks books by the existing separate score
 `min(recent Sharpe, historical Sharpe)`, while the selected candidate is also
 checked using rank-average and joined evidence.
 
-| Mechanism | Candidate | Recent Sharpe | Historical Sharpe | Separate score | Joined Sharpe | Separate rank |
-|---|---|---:|---:|---:|---:|---:|
-| A | V2 selected book | 1.2559 | 0.7722 | 0.7722 | 0.9268 | 4 |
-| A | `sp500-12m/cross_sector_slide1m_noscreen` + `sp500-12m/same_sector_slide3m_noscreen` | 0.9983 | 0.7980 | 0.7980 | 0.8501 | 1 |
-| B | V2 selected book | 1.1604 | 0.8006 | 0.8006 | 0.9120 | 2 |
-| B | `sp500-12m/same_sector_slide3m_noscreen` + `sp500-12m/same_sector_slide1m_bd7` | 0.8041 | 0.8799 | 0.8041 | 0.8528 | 1 |
+| Mechanism | Candidate | Recent Sharpe | Historical Sharpe | Separate score | Joined Sharpe | score_rank | rank_avg_rank | joined_rank |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| A | V2 selected book | 1.2559 | 0.7722 | 0.7722 | 0.9268 | 4 | 1 | 1 |
+| A | `sp500-12m/cross_sector_slide1m_noscreen` + `sp500-12m/same_sector_slide3m_noscreen` | 0.9983 | 0.7980 | 0.7980 | 0.8501 | 1 | 8 | 3 |
+| B | V2 selected book | 1.1604 | 0.8006 | 0.8006 | 0.9120 | 2 | 1 | 1 |
+| B | `sp500-12m/same_sector_slide3m_noscreen` + `sp500-12m/same_sector_slide1m_bd7` | 0.8041 | 0.8799 | 0.8041 | 0.8528 | 1 | 20 | 2 |
 
-The selected book is not justified by recent Sharpe alone. It is the V2
-rank-average consensus leader across the configured evidence and then survives
-the focused cross-check and Clean40 audit. The candidate comparison is an
-attribution of the completed ranking, not a new selection run.
+Lower rank is better; these ranks are copied from the committed V2 ranking
+artifact and are not recomputed here. The selected book is not justified by
+recent Sharpe or the separate score alone: each displayed alternative has a
+better `score_rank` in its mechanism. The selected book is the V2 rank-average
+consensus leader (`rank_avg_rank = 1`) and also has `joined_rank = 1` in both
+mechanisms, then survives the focused cross-check and Clean40 audit. The
+candidate comparison is an attribution of the completed ranking, not a new
+selection run.
 
 ## Clean40 Decision
 
