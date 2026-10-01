@@ -105,6 +105,26 @@ Public audit figures are retained with the result artifacts:
 - [Recent robustness surface](results/v2_book_clean40_retune/clean40_surface_recent.png)
 - [Historical robustness surface](results/v2_book_clean40_retune/clean40_surface_historical.png)
 
+## Transaction-Cost Sensitivity
+
+The frozen candidate was also tested with a simple one-way all-in cost overlay
+on traded notional. These are means across mechanisms using the same recent and
+historical aggregation convention; they are not live execution estimates.
+
+| Cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
+|---:|---:|---:|---:|---:|
+| 0 bps | 1.208 | 0.786 | 9.13% | 3.61% |
+| 5 bps | 0.833 | 0.189 | 6.34% | 0.82% |
+| 10 bps | 0.460 | -0.402 | 3.50% | -2.31% |
+| 20 bps | -0.282 | -1.536 | -2.38% | -10.12% |
+
+At 5 bps, all existing recent starts and the historical control remain
+positive. At 20 bps, only 2 of 10 recent mechanism-start combinations remain
+positive and neither historical control does. Approximate recent break-even
+costs are 16.5 bps for Mechanism A and 15.2 bps for Mechanism B on a mean
+basis; the historical controls break even near 6.3--6.5 bps. See the full
+[transaction-cost report](results/transaction_cost_analysis/tca_summary.md).
+
 ## Methodology
 
 The research pipeline is described in [`docs/methodology.md`](docs/methodology.md).

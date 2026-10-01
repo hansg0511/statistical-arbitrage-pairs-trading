@@ -73,3 +73,11 @@ This branch reorganizes the evidence for public reading. It does not change
 research code, rerun the matrix, replace the V1 config, or rewrite the lower-
 level decision log. The next research question is unseen paper-trading behavior
 under realistic costs, borrow, execution, margin, and reconciliation controls.
+
+## 9. Transaction-Cost Sensitivity
+
+The frozen V2 candidate was tested under simple 0, 5, 10, and 20 bps one-way
+all-in traded-notional assumptions. No further strategy optimization was
+performed. The low-cost case remained positive, while the historical control
+turned negative by 10 bps and both periods were materially impaired at 20 bps.
+This is the final historical validation overlay before forward paper testing.

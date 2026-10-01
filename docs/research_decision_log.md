@@ -714,3 +714,107 @@ constraints?
 `research/run_v2_book_clean40_retune.py`,
 `tests/test_v2_book_clean40_retune.py`, and
 `results/v2_book_clean40_retune/`; branch `sizing-v2-gross-exposure`.
+
+### Research entry: Frozen-candidate transaction-cost sensitivity
+
+**Status:** completed
+
+**Question**
+
+Does the frozen V2-selected book remain economically attractive after simple
+one-way all-in trading-cost assumptions?
+
+**Why this mattered**
+
+The historical replay had previously omitted commissions, spread, and slippage.
+Before moving to forward paper testing, the candidate needed a small cost
+sensitivity overlay without reopening strategy selection or execution modeling.
+
+**Frozen strategy definition**
+
+The study used the current V2 candidate exactly as frozen:
+
+- Leg A: `sp500-12m/same_sector_slide1m_noscreen`;
+- Leg B: `sp500-12m/same_sector_slide3m_noscreen`;
+- V2 `gross_exposure` sizing;
+- 84-day Clean40 lookback, 0.40 step, 10%--90% bounds, and 50/50 initial weight; and
+- both replay mechanisms across the five recent starts and one historical control.
+
+No book, sizing, allocator, pair parameter, signal, or entry/exit rule changed.
+
+**Cost convention**
+
+For each accepted replay trade, native V2 share quantities were scaled by the
+frozen replay allocation. Entry traded notional used the recorded native entry
+prices. Exit traded notional used the preserved close snapshot on the exit date
+because exact exit execution prices are not present in the compact trade log.
+Entry and exit notional were both charged at the same one-way rate. The rate is
+a simple historical proxy, not an exact live-cost estimate.
+
+**Cost grid**
+
+The only scenarios were `0`, `5`, `10`, and `20` bps of traded notional.
+
+**Method**
+
+The existing frozen replay was run without changing its inputs. Daily net PnL
+was gross daily PnL less entry/exit transaction cost, and net equity and metrics
+were reconstructed for every start, mechanism, and cost scenario. Recent
+results use the existing mean-across-starts convention. Break-even was
+interpolated from gross PnL and total two-way traded notional.
+
+**Results**
+
+Mean recent net annualized return / Sharpe across mechanisms were `9.13% / 1.208`
+at 0 bps, `6.34% / 0.833` at 5 bps, `3.50% / 0.460` at 10 bps, and
+`-2.38% / -0.282` at 20 bps. Mean historical net annualized return / Sharpe
+were `3.61% / 0.786`, `0.82% / 0.189`, `-2.31% / -0.402`, and
+`-10.12% / -1.536` at the same cost levels.
+
+At 5 bps, all recent starts and the historical control remained positive. At
+10 bps, the historical control was negative for both mechanisms and one of five
+recent Mechanism B starts was negative. At 20 bps, only `2/10` recent
+mechanism-start combinations were positive and neither historical control was
+positive.
+
+Mean total two-way traded notional was approximately `$105.8M` for recent
+Mechanism A, `$106.4M` for recent Mechanism B, `$302.9M` for historical
+Mechanism A, and `$301.1M` for historical Mechanism B. These totals are about
+`105.8x`, `106.4x`, `302.9x`, and `301.1x` initial capital over the respective
+replay windows.
+
+**Break-even cost**
+
+Approximate recent per-start break-even ranges were `11.2--21.8` bps for
+Mechanism A and `9.4--21.0` bps for Mechanism B. Recent mean break-even was
+`16.5` bps for A and `15.2` bps for B; medians were `17.0` and `17.1` bps.
+The historical controls broke even at approximately `6.3` bps for A and
+`6.5` bps for B.
+
+**Interpretation**
+
+The frozen candidate is positive under the low 5 bps overlay, but the historical
+control is not robust to 10 bps and the recent result is materially impaired by
+20 bps. The high cumulative turnover makes the conclusion cost-sensitive. This
+is a useful validation boundary, not evidence that any one cost level is live-
+realistic.
+
+**Decision**
+
+Do not retune the strategy. Treat the historical research as frozen and carry
+the candidate forward only as a paper-trading subject with measured execution
+costs.
+
+**Next stage**
+
+Forward paper testing must collect decision-time prices, spreads where
+available, submission and fill timestamps, commissions, partial fills, legging
+delay, realized shortfall, rejected orders, and realized turnover. Broker
+margin, borrow, capital reservation, and operational controls remain separate
+pre-live work.
+
+**Artifacts / branch**
+
+`research/run_transaction_cost_analysis.py`,
+`tests/test_transaction_cost_analysis.py`, and
+`results/transaction_cost_analysis/`; branch `transaction-cost-analysis`.

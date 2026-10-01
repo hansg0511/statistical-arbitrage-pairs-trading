@@ -54,6 +54,21 @@ The principal files are:
 The machine-readable summary reports `status: pass`, unchanged protected
 hashes, valid V2 native exposure, valid gross budgets, and no full-matrix rerun.
 
+## Transaction-Cost Sensitivity
+
+`results/transaction_cost_analysis/` is the final small historical sensitivity
+overlay on the frozen V2 candidate. It contains:
+
+- `tca_per_start.csv`: all five recent starts, the historical control, both mechanisms, and 0/5/10/20 bps;
+- `tca_summary.csv`: recent and historical means using the public aggregation convention;
+- `tca_break_even.csv`: per-start and recent mean/median break-even estimates;
+- `tca_summary.md`: interpretation, turnover, reconciliation, and tables; and
+- two compact plots for Sharpe and annualized return versus cost.
+
+The 0 bps rows reproduce the Clean40 gross metrics within numerical tolerance.
+The exit-cost proxy uses exit-date close snapshots because exact exit execution
+prices are not present in the preserved compact trade logs.
+
 ## Historical V1 Public Snapshot
 
 `results/final/` is the earlier locked V1 public artifact set. Its manifest,

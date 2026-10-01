@@ -72,6 +72,21 @@ The full raw V2 run tree is excluded because it is large and environment-bound.
 The compact matrix outputs, selected-book cross-check, and Clean40 result tree
 are the public audit boundary for this branch.
 
+## Transaction-Cost Overlay
+
+With the preserved V2 raw runs and a compatible Python/NumPy environment:
+
+```text
+python research/run_transaction_cost_analysis.py
+```
+
+The preserved snapshots were generated under the project's Python 3.14/NumPy
+environment on the research workstation. A different pickle/runtime
+combination may require the corresponding compatible environment. The command
+does not accept strategy, sizing, allocator, or cost-grid tuning arguments; it
+uses the frozen study definition and writes
+`results/transaction_cost_analysis/`.
+
 ## Verification Commands
 
 For a documentation-only change, the required verification is:

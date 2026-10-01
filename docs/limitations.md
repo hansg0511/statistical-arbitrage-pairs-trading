@@ -52,6 +52,19 @@ More generally, a factor regression is a diagnostic about the tested return
 stream. It does not prove factor-neutral excess return or future Sharpe
 persistence.
 
+## Transaction-Cost Sensitivity
+
+The historical cost overlay is intentionally narrow. It applies simple one-way
+rates to allocator-scaled native share quantities and uses exit-date close
+snapshots where exact exit execution prices are unavailable. It does not
+estimate live commissions, spread, slippage, borrow, financing, market impact,
+partial fills, or broker behavior.
+
+The result is cost-sensitive: 5 bps leaves the historical control positive, but
+10 bps makes the historical control negative and 20 bps makes the recent and
+historical aggregate results negative. This is a validation warning, not a
+reason to retune the frozen strategy from the same historical windows.
+
 ## Metric Boundaries
 
 The V2 matrix's canonical standalone selection score for Leg A historical

@@ -59,6 +59,34 @@ leave-one-start-out selection returned the existing baseline, and no candidate
 cleared the required 0.05 robust-floor improvement. The decision is therefore
 `keep_old_clean40`.
 
+## Transaction-Cost Sensitivity
+
+This is a historical overlay on the frozen V2 book and frozen Clean40 path. It
+charges the same one-way all-in basis-point rate at each accepted trade entry
+and exit using allocator-scaled native V2 share quantities. Exact exit execution
+prices are not logged, so exit notional uses the preserved exit-date close
+snapshot. No broker, margin, borrow, partial-fill, or execution model is added.
+
+| One-way cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
+|---:|---:|---:|---:|---:|
+| 0 bps | 1.208 | 0.786 | 9.13% | 3.61% |
+| 5 bps | 0.833 | 0.189 | 6.34% | 0.82% |
+| 10 bps | 0.460 | -0.402 | 3.50% | -2.31% |
+| 20 bps | -0.282 | -1.536 | -2.38% | -10.12% |
+
+Recent total two-way traded notional averages approximately `$105.8M` for A and
+`$106.4M` for B, or roughly `106x` initial capital over the recent replay
+windows. Historical totals are approximately `$302.9M` for A and `$301.1M` for
+B. At 5 bps every recent start and the historical control remain positive. At
+10 bps the historical control is negative for both mechanisms and one recent B
+start is negative. At 20 bps only `2/10` recent mechanism-start combinations
+remain positive, with neither historical control positive.
+
+Approximate recent mean break-even costs are `16.5` bps for A and `15.2` bps for
+B. Per-start ranges are `11.2--21.8` bps for A and `9.4--21.0` bps for B; the
+historical controls break even near `6.3--6.5` bps. The complete rows and
+figures are in [`results/transaction_cost_analysis/`](../results/transaction_cost_analysis/).
+
 ## Metric Convention Note
 
 The completed matrix report lists the V2 standalone historical score for the
