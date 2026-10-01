@@ -1,127 +1,197 @@
-# Statistical Arbitrage Pairs Trading System
+# Robust Mean-Reversion Pairs Trading
 
-A statistical arbitrage pairs trading framework that exploits cointegrated equity spreads using z-score mean reversion signals. The system is validated using strict walk-forward out-of-sample testing with an emphasis on robustness, regime stability, and market neutrality rather than in-sample optimisation.
+This repository is a research system for walk-forward statistical arbitrage in
+equity pairs. It covers pair formation, residual mean reversion, sizing,
+shared-account replay, portfolio selection, and robustness checks. It is not a
+broker integration or a live-trading system.
 
----
+The public presentation describes the latest completed V2 gross-exposure
+research. The older V1 public snapshot remains in the repository unchanged so
+that the sizing comparison and audit trail remain reproducible.
 
-## Summary
+## Research Question
 
-- **Strategy:** Cointegration-based pairs trading (mean-reverting spreads)
-- **Universe:** S&P 500 mega-cap equities (same-sector pairs)
-- **Signal:** Z-score of OLS residuals (entry/exit thresholds)
-- **Validation:** 8-fold walk-forward out-of-sample testing
-- **Market Exposure:** Near-zero beta (~0.003) and correlation (~0.01)
-- **Performance:** Sharpe 0.65, 63% win rate, low drawdowns (1–2% avg per fold)
+The research asks whether a book of walk-forward cointegrated-pair strategies
+can remain useful across recent and older periods after:
 
----
+- comparing 32 explicit strategy configurations;
+- combining two legs into 496 candidate books;
+- replaying both shared-account allocation mechanisms; and
+- fixing the pair gross-exposure convention before comparing V2 books.
 
-## Key Out-of-Sample Results (2024–2026)
+The displayed periods are research windows that informed selection. They are not
+an untouched portfolio-level holdout.
 
-| Metric | Value |
+## Current V2 Candidate
+
+The latest completed V2 candidate is:
+
+| Item | Value |
 |---|---|
-| Sharpe Ratio | 0.65 |
-| Win Rate | 63.2% |
-| Annualized Returns | 2.84% |
-| Avg Max Drawdown (per fold) | 1.7% |
-| Total Trades | 38 |
-| Avg Capital Utilization | 8.0% |
-| Market Beta (SPY) | 0.003 |
-| Correlation to SPY | 0.011 |
+| Leg A | `sp500-12m/same_sector_slide1m_noscreen` |
+| Leg B | `sp500-12m/same_sector_slide3m_noscreen` |
+| Sizing | V2 `gross_exposure`; `$250,000` total pair budget |
+| Capital | `$1,000,000` replay account |
+| Allocator | 84-day causal lookback, `0.40` step, `10%--90%` bounds, 50/50 initial weight |
+| Pair universe | 496 two-leg candidate books per mechanism |
+| Clean40 decision | Keep the existing allocator: `lb84_s0.40_b0.10_0.90` |
 
-> Returns are generated through highly selective, low-capital deployment with near-zero market dependency.
+The V2 candidate was selected from the completed matrix using the existing
+multi-view ranking convention. This final presentation does not introduce a
+new pair-selection or signal-parameter search.
 
----
+### Artifact Boundary
 
-## Strategy Overview
+`research/selected_book_config.json` and `results/final/` are the earlier locked
+V1 public snapshot. They intentionally continue to describe:
 
-The system identifies statistically linked equity pairs and trades deviations from equilibrium.
+- `sp500-12m/cross_sector_slide1m_noscreen`; and
+- `sp500-2m/cross_sector_slide3m_bd7`.
 
-### Core Process
+Those artifacts are historical controls, not silently replaced V2 outputs. The
+current V2 evidence is indexed in [`results/README.md`](results/README.md).
 
-1. **Pair Selection**
-   - Engle-Granger cointegration test (log prices, p < 0.05)
-   - Same-sector S&P 500 mega-cap universe
+## Headline Replay Results
 
-2. **Signal Generation**
-   - Rolling OLS residual spread
-   - Z-score computed on fixed entry distribution
+The following rows are the V2 selected book under V2 gross-exposure sizing.
+Recent values are means across five starts; historical has one aligned control
+start. Annual return, volatility, and drawdown are means of start-level replay
+metrics, not metrics from a concatenated pseudo-series.
 
-3. **Execution Logic**
-   - Entry/exit triggered by Z-score thresholds
-   - Frozen entry distribution (prevents rolling distortion)
-   - Hedge ratio monitoring for structural drift
+| Window | Starts | Mechanism | Mean annual return | Mean volatility | Mean Sharpe | Mean max drawdown |
+|---|---:|---|---:|---:|---:|---:|
+| Recent | 5 | A | 9.4363% | 7.2767% | 1.2559 | -3.5814% |
+| Recent | 5 | B | 8.8177% | 7.3718% | 1.1604 | -4.1857% |
+| Historical | 1 | A | 3.5519% | 4.6604% | 0.7722 | -6.0976% |
+| Historical | 1 | B | 3.6603% | 4.6241% | 0.8006 | -6.1037% |
 
----
+These figures come from the compact V2 matrix and selected-book cross-check
+artifacts. See [`docs/results.md`](docs/results.md) for definitions and the
+comparison with the earlier V1 book.
 
-## Risk & Trade Management
+## Why This Book
 
-- **Hedge Ratio Guard:** Prevents trades when structural drift exceeds threshold
-- **Fixed Trade Reference:** Entry distribution remains constant over trade lifetime
-- **Exit Conditions:**
-  - Mean reversion (Z-score exit)
-  - Stop-loss threshold
-  - Hedge ratio break
-  - Max holding period (losses only)
-  - Fold termination
+The V2 matrix covered 32 standalone configurations, 192 standalone run
+instances, 496 books per mechanism, and 992 combined rows per sizing mode. No
+standalone configuration changed its selection decision under V2, and the V2
+gross-budget invariant passed for every retained run.
 
----
+The selected book is the current rank-average consensus leader under the V2
+ranking evidence. It is not the highest recent-Sharpe pair under every view:
+the separate-score rank is 4 for Mechanism A and 2 for Mechanism B. That is
+intentional. The selection gives weight to recent and historical behavior and
+joined-book behavior together.
 
-## Validation Framework
+## Clean40 Robustness
 
-### Walk-Forward Design
-- 15 folds total
-- 2-month training / selection
-- 3-month testing
-- Strict out-of-sample evaluation (2020–2024 IS, 2024–2026 OOS)
+The Clean40 audit held the V2 book and V2 sizing fixed. It evaluated 40
+lattice-aligned dynamic configurations plus a static 50/50 control.
 
-### Parameter Selection
-- 1,824 parameter combinations tested
-- Grid search across:
-  - Entry/exit/stop thresholds
-  - Hedge ratio constraints
-  - Lookback parameters
-- Sensitivity analysis used to identify stable regions of performance
+| Measure | Existing dynamic | Static 50/50 |
+|---|---:|---:|
+| Recent mean Sharpe | 1.208 | 1.237 |
+| Historical mean Sharpe | 0.786 | 0.503 |
+| Robust floor | 0.772 | 0.491 |
 
-### Selection Criteria
-- Robustness across stress regimes
-- Out-of-sample Sharpe stability
-- Survival under worst historical folds (e.g., 2022–2023 regime shock)
+The existing dynamic setting remained the selection because it cleared the
+predeclared robustness rule, sat in a plateau of 8 configurations, and was
+selected in every leave-one-start-out region. The result is `keep_old_clean40`,
+not a claim that dynamic allocation wins every recent path.
 
----
+Public audit figures are retained with the result artifacts:
 
-## Regime Performance
+- [Recent equity paths](results/v2_book_clean40_retune/baseline_equity_recent.png)
+- [Recent allocator weights](results/v2_book_clean40_retune/baseline_weight_recent.png)
+- [Recent robustness surface](results/v2_book_clean40_retune/clean40_surface_recent.png)
+- [Historical robustness surface](results/v2_book_clean40_retune/clean40_surface_historical.png)
 
-### 2018–2020 Stress Period
-- Weak performance across all parameter sets (structural limitation)
-- Idiosyncratic shocks (e.g., earnings events) dominated spread behaviour
-- No parameter regime fully stabilised performance
+## Transaction-Cost Sensitivity
 
-### 2024–2026 Period
-- Stable mean reversion across all folds
-- Consistent signal generation in low-volatility regime
-- Strategy behaves as designed under expected conditions
+The frozen candidate was tested at 0, 5, 10, and 20 bps, each an assumed
+one-way all-in execution cost on traded notional. This historical sensitivity
+overlay is not a full execution model or a live-cost estimate. Values are means
+across mechanisms using the same recent and historical aggregation convention.
 
----
+| Cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
+|---:|---:|---:|---:|---:|
+| 0 bps | 1.208 | 0.786 | 9.13% | 3.61% |
+| 5 bps | 0.833 | 0.189 | 6.34% | 0.82% |
+| 10 bps | 0.460 | -0.402 | 3.50% | -2.31% |
+| 20 bps | -0.282 | -1.536 | -2.38% | -10.12% |
 
-## Known Limitations
+At 5 bps, all existing recent starts and the historical control remain
+positive. At 10 bps, the recent aggregate remains positive, but one recent
+Mechanism B start and both historical controls are negative. At 20 bps, only 2
+of 10 recent mechanism-start combinations remain positive and neither
+historical control does. Approximate recent break-even costs are 16.5 bps for
+Mechanism A and 15.2 bps for Mechanism B on a mean basis; the historical
+controls break even near 6.3--6.5 bps. Recent aggregate results therefore
+remain positive through 10 bps under these assumptions, while historical
+performance is much more transaction-cost sensitive. The historical break-even
+range makes execution quality a first-order forward-deployment issue; these
+assumed rates are not estimates of realistic observed live costs. See the full
+[transaction-cost report](results/transaction_cost_analysis/tca_summary.md).
 
-- Exposure to **idiosyncratic single-name shocks** (e.g., earnings/news gaps)
-- Concentration risk from multi-pair exposure to same equities
-- Low capital utilization (~8%) limits absolute return scalability
+## Methodology
 
----
+The research pipeline is described in [`docs/methodology.md`](docs/methodology.md).
+At a high level it:
 
-## Quick Start
+1. forms pairs from log-price data using Engle-Granger tests, OLS hedge ratios,
+   residual diagnostics, sector rules, and walk-forward formation windows;
+2. trades residual z-score excursions with locked entry statistics, a hedge-ratio
+   guard, stop and exit rules, earnings gates, and a loss-only calendar holding
+   limit;
+3. compares the legacy V1 reference-leg sizing with V2 fixed-total-gross sizing;
+4. replays recorded trade events and daily marks in one shared account; and
+5. ranks books across recent, historical, separate, rank-average, and joined
+   evidence before auditing the allocator.
 
-```bash
-pip install -r requirements.txt
-python run_backtest.py
+## Limitations
 
-# Specify a custom backtest date range
-python run_backtest.py --start 2018-01-01 --end 2020-12-31
+The result is a research candidate, not evidence of live profitability. The
+base replay does not natively simulate observed execution friction. A separate
+historical transaction-cost sensitivity overlay uses assumed one-way all-in
+costs on traded notional; it is not a full execution model and does not
+estimate actual live commissions, bid/ask spread, slippage, or implementation
+shortfall. The replay and overlay do not model borrow, financing, partial
+fills, asynchronous two-leg execution, broker margin admission, or a
+deployable-capital policy. Gross leverage can exceed 1x, and pair overlap,
+calendar concentration, factor exposure, static-universe effects, and selection
+dependence remain material.
+
+See [`docs/limitations.md`](docs/limitations.md) for the full boundary and the
+paper-trading validation gate.
+
+## Reproduce and Audit
+
+Start with [`docs/reproducibility.md`](docs/reproducibility.md). The compact V2
+matrix summary, selected-book cross-check, and Clean40 audit are already
+generated artifacts. Full V2 regeneration requires the preserved local raw run
+trees and deterministic input snapshots; it is not required to read the public
+tables.
+
+The basic test command is:
+
+```text
+python -m pytest -q
 ```
 
-- `--start`: Backtest start date (format: `YYYY-MM-DD`)
-- `--end`: Backtest end date (format: `YYYY-MM-DD`)
+## Repository Guide
 
-If omitted, defaults to 2020-01-01 to 2020-05-31.
+- [`docs/README.md`](docs/README.md): public documentation index
+- [`docs/results.md`](docs/results.md): headline metrics and selection evidence
+- [`docs/robustness.md`](docs/robustness.md): starts, folds, concentration, and allocator checks
+- [`docs/methodology.md`](docs/methodology.md): signal, sizing, and replay definitions
+- [`docs/limitations.md`](docs/limitations.md): interpretation and live-readiness boundary
+- [`docs/reproducibility.md`](docs/reproducibility.md): commands, inputs, and provenance
+- [`docs/research_chronology.md`](docs/research_chronology.md): concise research chronology
+- [`docs/research_decision_log.md`](docs/research_decision_log.md): lower-level experiment log
+- [`results/README.md`](results/README.md): result-generation index and artifact boundaries
+
+## Research Status
+
+Historical strategy research is frozen. No further parameter, allocator, sizing,
+or book optimization is planned using the existing research windows, including
+in response to the transaction-cost overlay. The next validation stage is
+forward paper trading with observed execution costs and operational controls.

@@ -1,0 +1,219 @@
+{
+  "allocator": {
+    "fraction_at_50_daily": 0.22399667849392318,
+    "fraction_at_max_daily": 0.5519957157110584,
+    "fraction_at_min_daily": 0.22400760579501844,
+    "mean_monthly_changes": 7.0,
+    "recent_mean_weight_A": 0.6311952439664161
+  },
+  "artifacts": [
+    "baseline_per_start.csv",
+    "baseline_daily.csv",
+    "baseline_period_attribution.csv",
+    "baseline_fold_attribution.csv",
+    "baseline_fold_leave_one_out.csv",
+    "baseline_trade_concentration.csv",
+    "baseline_trade_contributions.csv",
+    "baseline_pair_concentration.csv",
+    "baseline_symbol_concentration.csv",
+    "baseline_leg_diagnostics.csv",
+    "clean40_grid_results.csv",
+    "clean40_mechanism_aggregate.csv",
+    "clean40_aggregate_rankings.csv",
+    "clean40_neighbor_sensitivity.csv",
+    "clean40_leave_one_start_out.csv",
+    "clean40_static_50_50_comparison.csv",
+    "clean40_turnover_analysis.csv",
+    "clean40_cost_sensitivity.csv",
+    "clean40_summary.json",
+    "clean40_summary.md",
+    "baseline_equity_recent.png",
+    "baseline_weight_recent.png",
+    "clean40_surface_recent.png",
+    "clean40_surface_historical.png"
+  ],
+  "baseline": {
+    "historical_mean_cumulative_return": 0.19244865309847925,
+    "historical_mean_sharpe": 0.7864101447590224,
+    "recent_mean_cumulative_return": 0.17014436029042052,
+    "recent_mean_sharpe": 1.2081732777919747
+  },
+  "baseline_parameters": {
+    "initial_capital": 1000000.0,
+    "initial_weight_leg_a": 0.5,
+    "lookback_days": 84,
+    "pct_per_pair": 0.25,
+    "sizing_mode": "gross_exposure",
+    "step": 0.4,
+    "weight_max": 0.9,
+    "weight_min": 0.1
+  },
+  "book": {
+    "leg_a": "sp500-12m/same_sector_slide1m_noscreen",
+    "leg_b": "sp500-12m/same_sector_slide3m_noscreen",
+    "matches_current_ranking": true,
+    "selection_evidence": {
+      "current_v2_book": {
+        "leg_a": "sp500-12m/same_sector_slide1m_noscreen",
+        "leg_b": "sp500-12m/same_sector_slide3m_noscreen",
+        "matches_handoff": true,
+        "selection_basis": "rank_avg_rank == 1, with joined_rank and score_rank recorded"
+      },
+      "locked_v1_book": {
+        "leg_a": "sp500-12m/cross_sector_slide1m_noscreen",
+        "leg_b": "sp500-2m/cross_sector_slide3m_bd7",
+        "matches_locked_config": true
+      },
+      "ranking_files": {
+        "v1": "results\\sizing_v2_full_summary\\combined_v1_rankings.csv",
+        "v2": "results\\sizing_v2_full_summary\\combined_v2_rankings.csv"
+      }
+    }
+  },
+  "branch": "sizing-v2-gross-exposure",
+  "calendar": {
+    "historical_period_count": 50,
+    "recent_period_count": 96,
+    "top_recent_quarter_share": 0.3563100263494617
+  },
+  "concentration": {
+    "full_recent_mean_sharpe": 1.2081732777919747,
+    "remove_best_five_recent_mean_sharpe": 0.8525231144069852,
+    "remove_best_trade_recent_mean_sharpe": 1.1152870270986264,
+    "top_pair_abs_share": 0.03200436463501018,
+    "top_symbol_abs_share": 0.021828272752186413,
+    "top_trade_abs_share": 0.015017194607332909,
+    "trade_hhi": 0.0035525364506218864,
+    "worst_pair": "ADI-WDC"
+  },
+  "counts": {
+    "aggregate_rows": 41,
+    "baseline_rows": 12,
+    "contexts": 6,
+    "fold_rows": 316,
+    "grid_rows": 492,
+    "leave_one_start_out_rows": 10,
+    "neighbor_rows": 6,
+    "period_rows": 146,
+    "trade_detail_rows": 11750
+  },
+  "decision": {
+    "dynamic_robust_floor": 0.772238460843904,
+    "final_configuration": "lb84_s0.40_b0.10_0.90",
+    "old_robust_floor": 0.772238460843904,
+    "outcome": "keep_old_clean40",
+    "reason": "predeclared robustness margin and plateau rule; not maximum recent Sharpe",
+    "static_robust_floor": 0.491063101386605
+  },
+  "execution_realism": {
+    "already_modeled": [
+      "preserved walk-forward trade events and fold boundaries",
+      "integer-share V2 gross-exposure sizing and entry budget invariant",
+      "entry/exit dates, stop/signal/max-holding trade events",
+      "native marked exposure reconciliation"
+    ],
+    "live_capital_required": [
+      "broker-specific margin and maintenance policy",
+      "corporate actions/dividends and stale-price controls",
+      "operational monitoring, reconciliation, and liquidation policy"
+    ],
+    "paper_trading_required": [
+      "realistic cost and slippage ledger",
+      "borrow/locate and short-sale availability",
+      "partial-fill and two-leg execution reconciliation",
+      "deployable-capital, margin, and gross/symbol/pair limits"
+    ],
+    "simplified_current_research": [
+      "no commissions, spread, slippage, borrow costs, or financing",
+      "margin_behavior=off in the preserved runs",
+      "shared-account replay is accounting, not broker cash/settlement simulation",
+      "no partial-fill or leg-asynchrony model",
+      "static-universe and corporate-action/survivorship limitations remain"
+    ]
+  },
+  "folds": {
+    "full_recent_mean_sharpe": 1.2081732777919747,
+    "leave_best_fold_mean_sharpe": 0.8608425872712704,
+    "recent_fold_id_count": 22,
+    "recent_fold_observations": 200,
+    "recent_positive_fold_observations": 147,
+    "top_recent_fold_share": 0.3363309614714978
+  },
+  "legs": {
+    "A": {
+      "historical_sharpe": 0.42031374907914276,
+      "recent_sharpe": 1.4575019694717464
+    },
+    "B": {
+      "historical_sharpe": 0.4629945724788455,
+      "recent_sharpe": 0.9660214199500748
+    },
+    "daily_correlation": 0.775735673392131,
+    "rolling_corr_max": 0.9685688771333876,
+    "rolling_corr_min": 0.25444271544004443
+  },
+  "search_space": {
+    "bounds": [
+      "50_50",
+      "40_60",
+      "30_70",
+      "20_80",
+      "10_90"
+    ],
+    "dynamic_configuration_count": 40,
+    "lattice_rule": "bounds must be reachable from 0.50 by integer step moves",
+    "lookback_days": [
+      42,
+      63,
+      84,
+      105,
+      126
+    ],
+    "static_configuration_count": 1,
+    "steps": [
+      0.1,
+      0.2,
+      0.3,
+      0.4
+    ]
+  },
+  "selection": {
+    "best_dynamic_configuration": "lb84_s0.40_b0.10_0.90",
+    "dynamic_plateau_count": 8,
+    "leave_one_start_out_regions": 1
+  },
+  "selection_rule": {
+    "material_sharpe_margin": 0.05,
+    "plateau_tolerance": 0.05,
+    "primary": "maximin of recent 20th-percentile Sharpe and historical Sharpe across mechanisms",
+    "tie_breaks": [
+      "recent median Sharpe floor",
+      "recent mean Sharpe",
+      "historical mean Sharpe",
+      "worst drawdown",
+      "lower allocator turnover"
+    ]
+  },
+  "static": {
+    "historical_mean_cumulative_return": 0.115623171065526,
+    "historical_mean_sharpe": 0.5025347534469944,
+    "recent_mean_cumulative_return": 0.1679971408241307,
+    "recent_mean_sharpe": 1.2366837781386497
+  },
+  "status": "pass",
+  "validation": {
+    "baseline_max_metric_difference": 7.916241884231567e-09,
+    "baseline_reproduction_status": "pass",
+    "canonical_outputs_written": false,
+    "full_matrix_rerun": false,
+    "max_snapshot_difference": 1.1368683772161603e-13,
+    "overall_status": "pass",
+    "pnl_equity_reconciliation_status": "pass",
+    "protected_hashes_unchanged": true,
+    "trade_identity_across_allocator_status": "pass",
+    "trade_identity_difference_count": 0,
+    "v2_book_identity": true,
+    "v2_gross_budget_status": "pass",
+    "v2_native_exposure_status": "pass"
+  }
+}

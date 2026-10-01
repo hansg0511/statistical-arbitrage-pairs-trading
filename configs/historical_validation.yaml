@@ -1,0 +1,32 @@
+name: historical_validation
+start: 2014-01-01
+end: 2020-01-01
+
+data:
+  universe: sp500
+  pool_path: data/pools/sp500_12m.pkl
+
+walk_forward:
+  selection_months: 12
+  test_months: 3
+  slide_months: 3
+
+strategy:
+  log_space: true
+  fixed_params: false
+  pvalue: 0.05
+
+portfolio:
+  initial_cash: 1000000.0
+  pct_per_pair: 0.25
+  max_pairs: 20
+  dollar_neutral: false
+
+risk:
+  earnings_screen: false
+  earnings_block_days: 0
+
+cross_sector: true
+return_divergence: 0.10
+workers: 1
+output: results/runs/historical_validation
