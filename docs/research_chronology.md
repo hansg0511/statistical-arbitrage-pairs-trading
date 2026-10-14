@@ -27,7 +27,7 @@ and joined-book evidence became part of the selection boundary.
 ## 4. V1 Public Snapshot
 
 The earlier public artifact generation locked the V1 reference-leg book on
-2026-09-08. It remains in `research/selected_book_config.json` and
+2026-09-08. It remains in `research/selected_book_v1_legacy.json` and
 `results/final/` for reproducibility. It is preserved, not promoted as the
 latest V2 candidate.
 
@@ -84,3 +84,13 @@ performed. The low-cost case remained positive, while the historical control
 turned negative by 10 bps and both periods were materially impaired at 20 bps.
 Historical strategy research is now frozen; this is the final historical
 validation overlay before forward paper testing.
+
+## 10. Final Portfolio Factor Diagnostics
+
+Using the frozen selected book's already-preserved daily returns, daily
+FF3, Momentum and Short-Term Reversal regressions were completed with HAC
+standard errors. No factor-adjusted alpha intercept was significant at 5%.
+Short-term reversal exposure was positive and significant in the historical
+control and all overlapping recent paths. This is a descriptive post-selection
+analysis, not a fresh holdout and not a reason to retune the strategy. See
+[`factor_exposure_analysis.md`](factor_exposure_analysis.md).
