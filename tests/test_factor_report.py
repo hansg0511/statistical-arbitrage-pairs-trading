@@ -15,7 +15,7 @@ def test_pinned_factor_report_matches_published_csv(monkeypatch):
 
     monkeypatch.setattr("src.fama_french.urlopen", fail_network)
     published = pd.read_csv(ROOT / "results" / "final" / "factors" / "selected_book.csv")
-    regenerated = build_factor_rows(ROOT / "research" / "selected_book_config.json")
+    regenerated = build_factor_rows(ROOT / "research" / "selected_book_v1_legacy.json")
 
     assert regenerated[["window", "start_index", "mechanism"]].equals(
         published[["window", "start_index", "mechanism"]]
