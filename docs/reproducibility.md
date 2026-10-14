@@ -13,13 +13,13 @@ python -m pytest -q
 ## Published V1 Snapshot
 
 These commands reproduce the tracked V1 public selection and replay artifacts
-from the tracked event fixtures. They use the locked V1 configuration and are
+from the tracked event fixtures. They use `research/selected_book_v1_legacy.json` explicitly and are
 not commands for the current V2 candidate:
 
 ```text
 python research/portfolio_selection.py
-python research/run_combined_backtest.py --window recent --mechanism both
-python research/run_combined_backtest.py --window historical --mechanism both
+python research/run_combined_backtest.py --config research/selected_book_v1_legacy.json --window recent --mechanism both
+python research/run_combined_backtest.py --config research/selected_book_v1_legacy.json --window historical --mechanism both
 python research/factor_report.py
 python research/plot_public_results.py
 python scripts/build_public_artifacts.py
@@ -27,6 +27,12 @@ python scripts/build_public_artifacts.py
 
 The V1 replay input boundary is `results/final/event_replay_inputs/`. The
 combined replay output is generated locally.
+
+## Default Configuration
+
+`research/selected_book_config.json` is now the frozen V2 candidate: both legs use SP500 12-month formation and same-sector no-screen variants (1-month and 3-month slide) with fixed gross-exposure sizing and the 84-day Clean40 allocator. The older V1 configuration is retained exactly as `research/selected_book_v1_legacy.json`.
+
+**Important:** the published `results/final/event_replay_inputs` belongs to V1. The V2 raw inputs are not tracked in the public repository. Running the V2 default through `research/run_combined_backtest.py` cannot reproduce the current V2 results from a fresh clone; the loader will stop when it finds no configured public V2 replay starts. Use the dedicated V2 summaries or supply the locally preserved raw inputs through an explicit V2 replay integration. Do not relabel V1 fixture data as V2.
 
 ## Completed V2 Audit Artifacts
 
