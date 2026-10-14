@@ -47,14 +47,17 @@ different source data is not guaranteed to reproduce every raw trade.
 
 ## Factor Interpretation
 
-The pinned factor report under `results/final/factors/` belongs to the earlier V1
-public snapshot. It found recurring recent market and short-term-reversal
-loadings and no conventionally significant alpha estimate. It is not a fresh
-factor-neutrality study of the V2 candidate, so it is not presented as one.
+The [selected-portfolio factor diagnostics](factor_exposure_analysis.md) use
+the frozen final portfolio's daily gross returns and a pinned daily FF3,
+Momentum, and Short-Term Reversal snapshot. No evaluated intercept is
+significant at 5%, while positive short-term-reversal loading is significant
+in each evaluated path. These same-window, historically selected returns
+cannot establish independent portfolio-level alpha.
 
-More generally, a factor regression is a diagnostic about the tested return
-stream. It does not prove factor-neutral excess return or future Sharpe
-persistence.
+The older factor report under `results/final/factors/` describes the archived
+research portfolio, not this final candidate. Do not mix its coefficients
+with the newer analysis. Factor regressions are diagnostics; they neither
+prove future performance nor prove true alpha equals zero.
 
 ## Transaction-Cost Sensitivity
 
