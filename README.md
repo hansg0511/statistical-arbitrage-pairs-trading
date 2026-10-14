@@ -43,7 +43,7 @@ A causal, trailing-Sharpe allocator adjusts the relative capital weights at mont
 | Strategy A | S&P 500 universe; 12-month formation; same-sector pairs; 1-month slide; no earnings screen |
 | Strategy B | S&P 500 universe; 12-month formation; same-sector pairs; 3-month slide; no earnings screen |
 | Signals | Common cointegration-based residual mean-reversion rules |
-| Position sizing | Fixed total pair gross-exposure budget; nominal $250,000 pair budget in a $1,000,000 research account |
+| Position sizing | Total gross exposure across both pair legs; 25% sizing parameter applied to allocated capital (base research account: $1,000,000) |
 | Allocation | 84-day trailing Sharpe; 40-percentage-point step; 10%–90% bounds; initial 50/50 split |
 
 The selected combination ranked first by **average recent/historical rank** and by **joined-series Sharpe rank** under both replay mechanisms. It was not the best portfolio under every individual ranking criterion. Selection considered performance across periods rather than maximizing the most recent Sharpe alone.
@@ -54,7 +54,7 @@ The selected combination ranked first by **average recent/historical rank** and 
 
 The results below describe the historically **selected** portfolio. The recent figures average five overlapping, shifted-start evaluations; the historical comparison uses one aligned control. Each statistic is an average of start-level metrics, not a statistic calculated by joining those return paths into one artificial series.
 
-| Evaluation | Starts | Mechanism | Mean annual return | Mean volatility | Mean Sharpe | Mean max drawdown |
+| Evaluation | Starts | Mechanism | Mean annualized return | Mean volatility | Mean Sharpe | Mean max drawdown |
 |---|---:|---|---:|---:|---:|---:|
 | Recent | 5 | A | 9.44% | 7.28% | 1.256 | -3.58% |
 | Recent | 5 | B | 8.82% | 7.37% | 1.160 | -4.19% |
@@ -83,7 +83,7 @@ The dynamic allocator did **not** have the highest recent mean Sharpe. Its selec
 
 Execution friction materially changes the interpretation of the results. The frozen portfolio was evaluated under assumed **one-way all-in costs per traded notional** at entry and exit, without re-optimizing the strategy.
 
-| Assumed one-way cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annual return | Historical mean annual return |
+| Assumed one-way cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
 |---:|---:|---:|---:|---:|
 | 0 bps | 1.208 | 0.786 | 9.13% | 3.61% |
 | 5 bps | 0.833 | 0.189 | 6.34% | 0.82% |
