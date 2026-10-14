@@ -50,3 +50,23 @@ def test_missing_factor_date_is_rejected():
     incomplete = factors[factors["date"] != missing_date]
     with pytest.raises(ValueError, match="does not cover"):
         fit_context(group, incomplete, "ff3_mom_strev")
+
+
+def test_reproduced_coefficients_agree_with_published_snapshot():
+    actual = calculate().sort_values(
+        ["window", "start_index", "mechanism", "model"]
+    ).reset_index(drop=True)
+    saved = pd.read_csv(
+        ROOT / "results/factor_exposure/selected_portfolio_factor_regressions.csv"
+    ).sort_values(
+        ["window", "start_index", "mechanism", "model"]
+    ).reset_index(drop=True)
+    keys = ["window", "start_index", "mechanism", "model", "n_obs", "zero_return_days"]
+    pd.testing.assert_frame_equal(actual[keys], saved[keys], check_dtype=False)
+    numeric = [c for c in actual.columns if c not in
+               {"window", "start_index", "mechanism", "model", "first_date", "last_date"}]
+    np.testing.assert_allclose(
+        actual[numeric].to_numpy(dtype=float),
+        saved[numeric].to_numpy(dtype=float),
+        rtol=0, atol=5e-7, equal_nan=True,
+    )
