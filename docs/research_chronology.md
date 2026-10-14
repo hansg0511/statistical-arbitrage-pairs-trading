@@ -70,9 +70,10 @@ start-out rerun. The decision was `keep_old_clean40`.
 
 ## 8. Current Presentation Boundary
 
-The public presentation reorganizes the evidence for public reading. It does not
-change research code, rerun the matrix, replace the V1 config, or rewrite the
-lower-level decision log. The next research question is unseen paper-trading
+The public presentation reorganizes the historical evidence without rerunning
+the strategy matrix or changing the original preserved research artifacts.
+Later factor diagnostics append to the decision log without changing the frozen
+strategy. The next independent validation question is unseen paper-trading
 behavior under realistic costs, borrow, execution, margin, and reconciliation
 controls.
 
