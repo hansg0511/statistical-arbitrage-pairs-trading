@@ -38,5 +38,7 @@ The current V2 presentation uses:
 - `results/transaction_cost_analysis/` for the completed historical cost-sensitivity overlay.
 
 The tracked `results/final/` tree and
-`research/selected_book_config.json` are preserved V1 public artifacts. They are
+`research/selected_book_v1_legacy.json` are preserved V1 public artifacts. They are
 not rewritten by the V2 presentation.
+
+The repository default `research/selected_book_config.json` describes the final V2 gross-exposure candidate. The tracked V1 replay fixtures must not be interpreted as V2 inputs.

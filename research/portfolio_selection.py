@@ -16,7 +16,7 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "research" / "selected_book_config.json"
+DEFAULT_CONFIG = ROOT / "research" / "selected_book_v1_legacy.json"
 DEFAULT_SCORES = ROOT / "results" / "final" / "rankings" / "clean40_pair_scores.csv"
 DEFAULT_RANKINGS = ROOT / "results" / "final" / "rankings" / "clean40_pair_rankings.csv"
 DEFAULT_SELECTED = ROOT / "results" / "final" / "rankings" / "clean40_selected_pair.csv"

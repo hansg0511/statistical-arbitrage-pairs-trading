@@ -16,13 +16,15 @@ if __package__ in {None, ""}:  # Support both `python research/...` and `python 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from research.run_combined_backtest import (
-    DEFAULT_CONFIG,
+    DEFAULT_CONFIG as DEFAULT_V2_CONFIG,
     configured_series,
     load_selected_book_config,
     metrics,
 )
 from src.fama_french import FamaFrenchFetcher
 
+
+DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / 'research' / 'selected_book_v1_legacy.json'
 
 DEFAULT_FACTOR_SNAPSHOT = (
     Path(__file__).resolve().parents[1]

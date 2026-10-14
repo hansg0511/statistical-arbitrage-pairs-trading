@@ -21,7 +21,9 @@ from research.portfolio_selection import (
     DEFAULT_SCORES,
     write_selection_artifacts,
 )
-from research.run_combined_backtest import DEFAULT_CONFIG, load_selected_book_config
+from research.run_combined_backtest import load_selected_book_config
+
+DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / 'research' / 'selected_book_v1_legacy.json'
 
 
 def _relative(path: str | Path) -> str:
@@ -208,7 +210,7 @@ def build_public_artifacts(
             "python scripts/build_public_artifacts.py",
         ],
         "code_paths": [
-            "research/selected_book_config.json",
+            "research/selected_book_v1_legacy.json",
             "research/portfolio_selection.py",
             "research/run_combined_backtest.py",
             "research/factor_report.py",

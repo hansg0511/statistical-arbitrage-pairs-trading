@@ -35,7 +35,7 @@ def test_collect_metrics_flattens_combined_summary(tmp_path):
 
 
 def test_selected_pair_is_rank_one_in_both_mechanisms():
-    config = load_config(ROOT / "research" / "selected_book_config.json")
+    config = load_config(ROOT / "research" / "selected_book_v1_legacy.json")
     ranked = rank_pairs(
         load_score_table(ROOT / "results" / "final" / "rankings" / "clean40_pair_scores.csv")
     )

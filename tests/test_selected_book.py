@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_selected_book_is_locked_and_has_one_pair():
-    path = ROOT / "research" / "selected_book_config.json"
+    path = ROOT / "research" / "selected_book_v1_legacy.json"
     with path.open(encoding="utf-8") as handle:
         config = json.load(handle)
 
@@ -28,7 +28,7 @@ def test_selected_book_is_locked_and_has_one_pair():
 
 
 def test_combined_replay_uses_configured_inputs_and_output():
-    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    config = load_selected_book_config(ROOT / "research" / "selected_book_v1_legacy.json")
     specs = leg_specs(config, "recent")
     assert Path(specs["A"][0]).as_posix() == (
         "results/final/event_replay_inputs/recent/start_01/A"
@@ -37,7 +37,7 @@ def test_combined_replay_uses_configured_inputs_and_output():
 
 
 def test_configured_replay_inputs_are_complete():
-    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    config = load_selected_book_config(ROOT / "research" / "selected_book_v1_legacy.json")
     input_root = ROOT / config["event_replay"]["input_root"]
     required = (
         "daily_returns.csv",
@@ -56,7 +56,7 @@ def test_configured_replay_inputs_are_complete():
 
 
 def test_config_records_generation_and_execution_assumptions():
-    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    config = load_selected_book_config(ROOT / "research" / "selected_book_v1_legacy.json")
     generation = config["leg_generation"]
     assert generation["leg_a"] == {
         "pool": "sp500_12m",
@@ -79,13 +79,13 @@ def test_config_records_generation_and_execution_assumptions():
 
 
 def test_selected_book_requires_calendar_holding_unit(tmp_path):
-    source = ROOT / "research" / "selected_book_config.json"
+    source = ROOT / "research" / "selected_book_v1_legacy.json"
     with source.open(encoding="utf-8") as handle:
         config = json.load(handle)
     config["leg_generation"]["shared"]["strategy"]["max_holding_unit"] = (
         "trading_sessions"
     )
-    path = tmp_path / "selected_book_config.json"
+    path = tmp_path / "selected_book_v1_legacy.json"
     path.write_text(json.dumps(config), encoding="utf-8")
 
     with pytest.raises(ValueError, match="max_holding_unit"):
@@ -93,7 +93,7 @@ def test_selected_book_requires_calendar_holding_unit(tmp_path):
 
 
 def test_public_replay_metadata_does_not_publish_price_paths():
-    config = load_selected_book_config(ROOT / "research" / "selected_book_config.json")
+    config = load_selected_book_config(ROOT / "research" / "selected_book_v1_legacy.json")
     input_root = ROOT / config["event_replay"]["input_root"]
     for window in config["event_replay"]["windows"].values():
         for start in window["starts"]:

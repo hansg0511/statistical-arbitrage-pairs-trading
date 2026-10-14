@@ -42,7 +42,7 @@ new pair-selection or signal-parameter search.
 
 ### Artifact Boundary
 
-`research/selected_book_config.json` and `results/final/` are the earlier locked
+`research/selected_book_v1_legacy.json` and `results/final/` are the earlier locked
 V1 public snapshot. They intentionally continue to describe:
 
 - `sp500-12m/cross_sector_slide1m_noscreen`; and

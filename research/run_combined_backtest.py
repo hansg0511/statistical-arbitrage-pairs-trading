@@ -486,7 +486,12 @@ def main():
     window_config = config['event_replay']['windows'].get(args.window, {})
     starts = window_config.get('starts', [])
     if not starts:
-        raise ValueError(f'no event-replay starts configured for {args.window}')
+        raise ValueError(
+            f'no event-replay starts configured for {args.window}; '
+            'the default frozen V2 configuration has no public replay inputs. '
+            'Use --config research/selected_book_v1_legacy.json for the tracked V1 fixtures, '
+            'or provide explicitly configured V2 raw runs.'
+        )
 
     run_metrics = {mechanism: [] for mechanism in mechanisms}
     for start_idx in range(len(starts)):
