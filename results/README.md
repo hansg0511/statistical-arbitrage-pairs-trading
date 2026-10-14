@@ -71,6 +71,16 @@ prices are not present in the preserved compact trade logs. This is not a full
 execution model; observed live implementation costs remain unknown. Historical
 research is frozen, and future validation belongs to forward paper trading.
 
+## Selected-Portfolio Factor Exposure
+
+`results/factor_exposure/selected_portfolio_factor_regressions.csv` stores
+24 regressions (market-only and FF3+Momentum+Short-Term Reversal for each
+of the 12 frozen research return paths). The reproducible calculation and
+interpretation are documented in
+[`docs/factor_exposure_analysis.md`](../docs/factor_exposure_analysis.md).
+The raw daily input series are the preserved `baseline_daily.csv` in the
+Clean40 audit, not the archived earlier-portfolio factor report.
+
 ## Historical V1 Public Snapshot
 
 `results/final/` is the earlier locked V1 public artifact set. Its manifest,

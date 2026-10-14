@@ -818,3 +818,61 @@ pre-live work.
 `research/run_transaction_cost_analysis.py`,
 `tests/test_transaction_cost_analysis.py`, and
 `results/transaction_cost_analysis/`; branch `transaction-cost-analysis`.
+
+### Research entry: Frozen selected-portfolio factor exposure
+
+**Status:** completed; post-selection diagnostic only
+
+**Question**
+
+Can the already-selected portfolio's gross daily returns be statistically
+associated with standard equity factors, and is there significant adjusted
+alpha after controlling for those exposures?
+
+**Why this mattered**
+
+The existing pinned factor report described the earlier book. The final selected
+portfolio had no directly comparable factor-exposure diagnostic.
+
+**Method**
+
+Keep the selected pair of configurations, gross-exposure sizing, and 84-day
+Clean40 allocator fixed. Use the 12 preserved daily account return paths and
+the pinned daily Fama–French market/SMB/HML, Momentum, Short-Term Reversal,
+and risk-free series. Regress daily excess account returns using market-only
+and full five-regressor models, with HAC standard errors. Retain all recorded
+flat days. Annualize the daily intercept by multiplying by 252.
+
+**Result**
+
+No factor-adjusted alpha intercept was significant at 5% in either the historical
+control or any of the overlapping recent paths. Historical annualized five-
+regressor intercepts were +1.44% (A, p=0.490) and +1.53% (B, p=0.457); recent
+annualized intercepts ranged approximately -3.07% to +2.98%. Short-term
+reversal loading was positive and significant in all 12 contexts; recent HML
+loadings were negative and significant in the expanded model.
+
+**Interpretation**
+
+The historical returns have recurring exposure to known factors. This neither
+establishes independent alpha nor proves its absence, especially since the
+portfolio and allocator were selected using these research periods.
+
+**Decision**
+
+Report the descriptive diagnostic with its uncertainty and input provenance.
+Do not change trade rules, portfolio composition, sizing, allocator, or the
+research freeze in response.
+
+**Next question**
+
+Can the frozen candidate operate successfully and economically on genuinely
+unseen forward data under observed execution, borrow, margin and capital limits?
+
+**Artifacts / branch**
+
+`research/run_selected_portfolio_factors.py`,
+`results/factor_exposure/selected_portfolio_factor_regressions.csv`,
+`docs/factor_exposure_analysis.md`, and
+`tests/test_selected_portfolio_factors.py`; branch
+`research/final-factor-diagnostics-20261014`.

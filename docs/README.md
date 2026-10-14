@@ -9,6 +9,7 @@ in the files below.
 - [`methodology.md`](methodology.md): what is measured and how the replay works
 - [`results.md`](results.md): the selected V2 book and headline numbers
 - [`robustness.md`](robustness.md): start, fold, concentration, and allocator checks
+- [`factor_exposure_analysis.md`](factor_exposure_analysis.md): selected-portfolio factor exposure and alpha uncertainty
 - [`limitations.md`](limitations.md): what the research does not establish
 - [`reproducibility.md`](reproducibility.md): commands, inputs, and provenance
 - [`research_chronology.md`](research_chronology.md): concise chronology of the research decisions
@@ -35,7 +36,8 @@ The current V2 presentation uses:
 - `results/sizing_v2_full_summary/` for the completed full-matrix comparison;
 - `results/v1_v2_selected_book_crosscheck/` for focused selection and sizing validation; and
 - `results/v2_book_clean40_retune/` for the frozen V2-book allocator audit; and
-- `results/transaction_cost_analysis/` for the completed historical cost-sensitivity overlay.
+- `results/transaction_cost_analysis/` for the completed historical cost-sensitivity overlay; and
+- `results/factor_exposure/` for the frozen selected-portfolio regression table.
 
 The tracked `results/final/` tree and
 `research/selected_book_v1_legacy.json` are preserved V1 public artifacts. They are

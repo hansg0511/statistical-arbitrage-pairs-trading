@@ -92,6 +92,12 @@ Execution friction materially changes the interpretation of the results. The fro
 
 The historical control turns negative by 10 bps, with estimated one-way break-even costs near **6.3–6.5 bps**. Execution quality is therefore a central deployment risk. These are sensitivity assumptions, **not measured live transaction costs**. See the [Transaction-Cost Report](results/transaction_cost_analysis/tca_summary.md).
 
+### Factor exposure diagnostics
+
+The final selected portfolio was evaluated using daily **Fama–French three-factor, Momentum, and Short-Term Reversal** regressions with HAC standard errors. No factor-adjusted intercept reached the 5% significance threshold across the 12 historical and overlapping recent start/mechanism paths. Positive short-term reversal exposure was statistically significant throughout, and the recent paths also showed negative value-factor (HML) exposure.
+
+This is a **descriptive analysis on the same research windows used for selection**, not untouched validation or proof that true alpha is zero. The account-level regressions retain flat/zero-return days and use a pinned factor snapshot. See the [full factor analysis](docs/factor_exposure_analysis.md) and [regression table](results/factor_exposure/selected_portfolio_factor_regressions.csv).
+
 ## Interpretation and Limitations
 
 **Walk-forward does not automatically mean untouched out-of-sample performance at every level.** Individual pairs are selected using preceding formation data and then traded forward. However, the portfolio, strategy combination, and allocation parameters were chosen after examining the reported historical windows. Consequently, the aggregate figures above are **research-window results, not an unbiased portfolio-level holdout estimate or a forward Sharpe forecast**.
@@ -125,6 +131,7 @@ Start with [Reproducibility](docs/reproducibility.md) for commands and input bou
 - [Methodology](docs/methodology.md) — pair formation, signals, sizing, shared-account mechanics
 - [Results](docs/results.md) — detailed portfolio rankings and performance
 - [Robustness](docs/robustness.md) — starts, concentration, allocator comparisons
+- [Factor Exposure Analysis](docs/factor_exposure_analysis.md) — final-portfolio alpha, factor loadings, confidence intervals
 - [Research Decision Log](docs/research_decision_log.md) — retrospective experiment-by-experiment rationale and decisions
 - [Research Chronology](docs/research_chronology.md) — how the investigation evolved
 - [Documentation Index](docs/README.md) — additional technical and historical reports
