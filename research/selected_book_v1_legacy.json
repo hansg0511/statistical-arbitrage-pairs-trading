@@ -1,0 +1,159 @@
+{
+  "schema_version": 2,
+  "status": "locked",
+  "locked_on": "2026-09-08",
+  "name": "clean40_selected_book",
+  "pair": {
+    "leg_a": {
+      "role": "recent_strong",
+      "strategy": "sp500-12m",
+      "config": "cross_sector_slide1m_noscreen",
+      "path": "sp500-12m/cross_sector_slide1m_noscreen"
+    },
+    "leg_b": {
+      "role": "historical_strong",
+      "strategy": "sp500-2m",
+      "config": "cross_sector_slide3m_bd7",
+      "path": "sp500-2m/cross_sector_slide3m_bd7"
+    }
+  },
+  "momentum": {
+    "lookback_days": 84,
+    "step": 0.4,
+    "weight_bounds": {
+      "min": 0.1,
+      "max": 0.9
+    },
+    "initial_weight_leg_a": 0.5
+  },
+  "book": {
+    "initial_capital": 1000000.0,
+    "pct_per_pair": 0.25
+  },
+  "leg_generation": {
+    "shared": {
+      "universe": "sp500",
+      "cross_sector": true,
+      "log_space": true,
+      "pvalue": 0.05,
+      "return_divergence": 0.1,
+      "test_months": 3,
+      "max_pairs": 20,
+      "dollar_neutral": false,
+      "strategy": {
+        "entry_z": 2.2,
+        "exit_z": 1.0,
+        "stop_z": 4.5,
+        "resid_val": 90,
+        "z_m": 0.5,
+        "hr_thresh": 0.8,
+        "max_holding_days": 15,
+        "max_holding_unit": "calendar_days"
+      }
+    },
+    "leg_a": {
+      "pool": "sp500_12m",
+      "selection_months": 12,
+      "slide_months": 1,
+      "earnings_screen": false,
+      "earnings_block_days": 0
+    },
+    "leg_b": {
+      "pool": "sp500_2m",
+      "selection_months": 2,
+      "slide_months": 3,
+      "earnings_screen": true,
+      "earnings_block_days": 7
+    },
+    "replay_source_template": "results/final/event_replay_inputs/{window}/start_{index:02d}/{leg}"
+  },
+  "selection_evidence": {
+    "pair_universe": 496,
+    "score_source": "results/final/rankings/clean40_pair_scores.csv",
+    "ranking_artifact": "results/final/rankings/clean40_pair_rankings.csv",
+    "selection_rule": "rank one by separate score, rank average, and joined Sharpe in both mechanisms",
+    "ranking_methods": [
+      "separate_score",
+      "rank_average",
+      "joined_sharpe"
+    ],
+    "mechanisms": [
+      "A",
+      "B"
+    ],
+    "ranks": {
+      "A": {
+        "separate_score": 1,
+        "rank_average": 1,
+        "joined_sharpe": 1
+      },
+      "B": {
+        "separate_score": 1,
+        "rank_average": 1,
+        "joined_sharpe": 1
+      }
+    }
+  },
+  "execution_assumptions": {
+    "status": "replay_defaults_recorded; production validation remains open",
+    "broker_leverage": 100.0,
+    "margin_behavior": "off",
+    "margin_long": 0.5,
+    "margin_short": 0.5,
+    "maintenance_long": 0.25,
+    "maintenance_short": 0.3,
+    "borrow_costs": null,
+    "slippage": null,
+    "transaction_costs": null
+  },
+  "event_replay": {
+    "input_root": "results/final/event_replay_inputs",
+    "output_root": "results/final/combined",
+    "windows": {
+      "recent": {
+        "starts": [
+          {
+            "A": "recent/start_01/A",
+            "B": "recent/start_01/B"
+          },
+          {
+            "A": "recent/start_02/A",
+            "B": "recent/start_02/B"
+          },
+          {
+            "A": "recent/start_03/A",
+            "B": "recent/start_03/B"
+          },
+          {
+            "A": "recent/start_04/A",
+            "B": "recent/start_04/B"
+          },
+          {
+            "A": "recent/start_05/A",
+            "B": "recent/start_05/B"
+          }
+        ]
+      },
+      "historical": {
+        "starts": [
+          {
+            "A": "historical/start_01/A",
+            "B": "historical/start_01/B"
+          }
+        ]
+      }
+    }
+  },
+  "provenance": {
+    "source_revision": "3d3ae66",
+    "archive_reference": "pre-public-cleanup-20260909",
+    "public_summary": "docs/research_summary.md",
+    "selection_source": "results/final/rankings/clean40_pair_scores.csv",
+    "selection_generator": "research/portfolio_selection.py",
+    "combined_replay": "research/run_combined_backtest.py",
+    "factor_report": "research/factor_report.py",
+    "factor_snapshot": "results/final/factors/ff_daily_2015_2025.csv",
+    "figure_generator": "research/plot_public_results.py",
+    "artifact_builder": "scripts/build_public_artifacts.py"
+  }
+}
