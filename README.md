@@ -1,197 +1,134 @@
-# Robust Mean-Reversion Pairs Trading
+# Statistical Arbitrage: Equity Pairs Trading Research
 
-This repository is a research system for walk-forward statistical arbitrage in
-equity pairs. It covers pair formation, residual mean reversion, sizing,
-shared-account replay, portfolio selection, and robustness checks. It is not a
-broker integration or a live-trading system.
+A systematic investigation of equity-pairs mean reversion, walk-forward testing, and portfolio construction. The project develops statistical trading signals, evaluates their sensitivity to historical conditions, and examines whether combining different strategy configurations produces a more resilient portfolio.
 
-The public presentation describes the latest completed V2 gross-exposure
-research. The older V1 public snapshot remains in the repository unchanged so
-that the sizing comparison and audit trail remain reproducible.
+This is a **research and backtesting project**, not a live trading system. The final portfolio is a candidate for forward paper-trading validation, not a demonstrated source of future returns.
 
-## Research Question
+## Research Objective
 
-The research asks whether a book of walk-forward cointegrated-pair strategies
-can remain useful across recent and older periods after:
+The central question is whether cointegration-based pairs trading can produce repeatable, economically meaningful performance across changing market conditions.
 
-- comparing 32 explicit strategy configurations;
-- combining two legs into 496 candidate books;
-- replaying both shared-account allocation mechanisms; and
-- fixing the pair gross-exposure convention before comparing V2 books.
+The research began with a standalone mean-reversion strategy. Evaluating it across historical periods and formation choices revealed that individual configurations could behave quite differently. This motivated a broader portfolio question: **can complementary configurations be combined under shared capital to improve robustness, rather than relying on a single backtest winner?**
 
-The displayed periods are research windows that informed selection. They are not
-an untouched portfolio-level holdout.
+The study therefore examines signal construction, walk-forward selection, portfolio combination, capital allocation, concentration, parameter stability, and transaction-cost sensitivity.
 
-## Current V2 Candidate
+## Trading Strategy
 
-The latest completed V2 candidate is:
+### Pair formation and signals
 
-| Item | Value |
+1. **Form candidate pairs.** Within each walk-forward formation window, test log-price relationships using Engle–Granger cointegration (5% significance threshold), estimate an OLS hedge ratio and intercept, and assess residual half-life and other eligibility criteria. Depending on the configuration, pairing is restricted to the same sector or allowed across sectors. Up to 20 pairs are selected per fold.
+2. **Trade deviations.** Model the spread as `r_t = log(P_A,t) - beta * log(P_B,t) - alpha`. Enter on sufficiently large residual z-score deviations and exit as the spread converges or when a risk rule is triggered. The strategy uses locked entry statistics, a hedge-ratio drift guard, a z-score stop, fold-end exits, and a loss-only maximum holding period.
+3. **Size both legs jointly.** Allocate a defined **total gross-exposure budget** to each pair, accounting for the hedge ratio and integer share quantities. This avoids treating the reference leg alone as the capital used by a long-short position.
+4. **Evaluate forward within folds.** Form and rank pairs using data available at the formation boundary, then simulate trading on subsequent observations. The walk-forward procedure is causal at the individual-strategy level.
+
+The selected signal settings and precise sizing equations are documented in [Methodology](docs/methodology.md).
+
+## From Standalone Strategies to Portfolio Construction
+
+Different standalone configurations exhibited materially different behavior across historical periods and start dates. Rather than treating one configuration as universally superior, the portfolio study compared a defined family of alternatives.
+
+The research evaluated **32 standalone configurations** across four universe/formation-window bases, each combined with sector constraints, fold-slide schedules, and optional earnings-event screening. The 32 configurations generate **496 distinct two-configuration portfolios**.
+
+Each portfolio was reconstructed from trade events and daily marks within a shared-account replay—not by simply adding two return series. Two accounting mechanisms were compared:
+
+- **Mechanism A — monthly fold-budget updates:** active folds receive updated sizing budgets at monthly allocation boundaries; existing open trades are not forcibly rebalanced.
+- **Mechanism B — entry-flow allocation:** each fold retains its initial capital basis while updated allocation weights apply to new entries, allowing existing exposure to drift.
+
+A causal, trailing-Sharpe allocator adjusts the relative capital weights at month boundaries using prior observations. The replay studies portfolio accounting and allocation decisions; it does not replicate broker execution.
+
+### Selected research portfolio
+
+| Component | Specification |
 |---|---|
-| Leg A | `sp500-12m/same_sector_slide1m_noscreen` |
-| Leg B | `sp500-12m/same_sector_slide3m_noscreen` |
-| Sizing | V2 `gross_exposure`; `$250,000` total pair budget |
-| Capital | `$1,000,000` replay account |
-| Allocator | 84-day causal lookback, `0.40` step, `10%--90%` bounds, 50/50 initial weight |
-| Pair universe | 496 two-leg candidate books per mechanism |
-| Clean40 decision | Keep the existing allocator: `lb84_s0.40_b0.10_0.90` |
+| Strategy A | S&P 500 universe; 12-month formation; same-sector pairs; 1-month slide; no earnings screen |
+| Strategy B | S&P 500 universe; 12-month formation; same-sector pairs; 3-month slide; no earnings screen |
+| Signals | Common cointegration-based residual mean-reversion rules |
+| Position sizing | Total gross exposure across both pair legs; 25% sizing parameter applied to allocated capital (base research account: $1,000,000) |
+| Allocation | 84-day trailing Sharpe; 40-percentage-point step; 10%–90% bounds; initial 50/50 split |
 
-The V2 candidate was selected from the completed matrix using the existing
-multi-view ranking convention. This final presentation does not introduce a
-new pair-selection or signal-parameter search.
+The selected combination ranked first by **average recent/historical rank** and by **joined-series Sharpe rank** under both replay mechanisms. It was not the best portfolio under every individual ranking criterion. Selection considered performance across periods rather than maximizing the most recent Sharpe alone.
 
-### Artifact Boundary
+## Historical Evaluation
 
-`research/selected_book_v1_legacy.json` and `results/final/` are the earlier locked
-V1 public snapshot. They intentionally continue to describe:
+### Portfolio replay results — before trading costs
 
-- `sp500-12m/cross_sector_slide1m_noscreen`; and
-- `sp500-2m/cross_sector_slide3m_bd7`.
+The results below describe the historically **selected** portfolio. The recent figures average five overlapping, shifted-start evaluations; the historical comparison uses one aligned control. Each statistic is an average of start-level metrics, not a statistic calculated by joining those return paths into one artificial series.
 
-Those artifacts are historical controls, not silently replaced V2 outputs. The
-current V2 evidence is indexed in [`results/README.md`](results/README.md).
-
-## Headline Replay Results
-
-The following rows are the V2 selected book under V2 gross-exposure sizing.
-Recent values are means across five starts; historical has one aligned control
-start. Annual return, volatility, and drawdown are means of start-level replay
-metrics, not metrics from a concatenated pseudo-series.
-
-| Window | Starts | Mechanism | Mean annual return | Mean volatility | Mean Sharpe | Mean max drawdown |
+| Evaluation | Starts | Mechanism | Mean annualized return | Mean volatility | Mean Sharpe | Mean max drawdown |
 |---|---:|---|---:|---:|---:|---:|
-| Recent | 5 | A | 9.4363% | 7.2767% | 1.2559 | -3.5814% |
-| Recent | 5 | B | 8.8177% | 7.3718% | 1.1604 | -4.1857% |
-| Historical | 1 | A | 3.5519% | 4.6604% | 0.7722 | -6.0976% |
-| Historical | 1 | B | 3.6603% | 4.6241% | 0.8006 | -6.1037% |
+| Recent | 5 | A | 9.44% | 7.28% | 1.256 | -3.58% |
+| Recent | 5 | B | 8.82% | 7.37% | 1.160 | -4.19% |
+| Historical | 1 | A | 3.55% | 4.66% | 0.772 | -6.10% |
+| Historical | 1 | B | 3.66% | 4.62% | 0.801 | -6.10% |
 
-These figures come from the compact V2 matrix and selected-book cross-check
-artifacts. See [`docs/results.md`](docs/results.md) for definitions and the
-comparison with the earlier V1 book.
+These five recent starts overlap substantially and should **not** be interpreted as five independent confirmations. Detailed results and ranking evidence are in [Results](docs/results.md).
 
-## Why This Book
+### Robustness and allocation
 
-The V2 matrix covered 32 standalone configurations, 192 standalone run
-instances, 496 books per mechanism, and 992 combined rows per sizing mode. No
-standalone configuration changed its selection decision under V2, and the V2
-gross-budget invariant passed for every retained run.
+The analysis examined start-date dispersion, calendar and fold concentration, individual trade/pair/symbol contributions, allocation turnover, and sensitivity to neighboring allocator settings.
 
-The selected book is the current rank-average consensus leader under the V2
-ranking evidence. It is not the highest recent-Sharpe pair under every view:
-the separate-score rank is 4 for Mechanism A and 2 for Mechanism B. That is
-intentional. The selection gives weight to recent and historical behavior and
-joined-book behavior together.
+A fixed-book allocation audit compared **40 dynamic allocator configurations** with an equal-weight (50/50) alternative. The selected dynamic setting belonged to a plateau of eight nearby configurations and remained in the selected parameter region under leave-one-start-out checks.
 
-## Clean40 Robustness
-
-The Clean40 audit held the V2 book and V2 sizing fixed. It evaluated 40
-lattice-aligned dynamic configurations plus a static 50/50 control.
-
-| Measure | Existing dynamic | Static 50/50 |
+| Allocation comparison | Dynamic allocation | Static 50/50 |
 |---|---:|---:|
 | Recent mean Sharpe | 1.208 | 1.237 |
 | Historical mean Sharpe | 0.786 | 0.503 |
-| Robust floor | 0.772 | 0.491 |
+| Robustness score (minimum across defined evaluation criteria) | 0.772 | 0.491 |
 
-The existing dynamic setting remained the selection because it cleared the
-predeclared robustness rule, sat in a plateau of 8 configurations, and was
-selected in every leave-one-start-out region. The result is `keep_old_clean40`,
-not a claim that dynamic allocation wins every recent path.
+The dynamic allocator did **not** have the highest recent mean Sharpe. Its selection reflected the chosen cross-period robustness rule, which remains a historical model-selection decision—not independent validation.
 
-Public audit figures are retained with the result artifacts:
+[Recent equity curves](results/v2_book_clean40_retune/baseline_equity_recent.png) · [Allocation weights](results/v2_book_clean40_retune/baseline_weight_recent.png) · [Recent parameter sensitivity](results/v2_book_clean40_retune/clean40_surface_recent.png) · [Historical parameter sensitivity](results/v2_book_clean40_retune/clean40_surface_historical.png)
 
-- [Recent equity paths](results/v2_book_clean40_retune/baseline_equity_recent.png)
-- [Recent allocator weights](results/v2_book_clean40_retune/baseline_weight_recent.png)
-- [Recent robustness surface](results/v2_book_clean40_retune/clean40_surface_recent.png)
-- [Historical robustness surface](results/v2_book_clean40_retune/clean40_surface_historical.png)
+### Transaction-cost sensitivity
 
-## Transaction-Cost Sensitivity
+Execution friction materially changes the interpretation of the results. The frozen portfolio was evaluated under assumed **one-way all-in costs per traded notional** at entry and exit, without re-optimizing the strategy.
 
-The frozen candidate was tested at 0, 5, 10, and 20 bps, each an assumed
-one-way all-in execution cost on traded notional. This historical sensitivity
-overlay is not a full execution model or a live-cost estimate. Values are means
-across mechanisms using the same recent and historical aggregation convention.
-
-| Cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
+| Assumed one-way cost | Recent mean Sharpe | Historical mean Sharpe | Recent mean annualized return | Historical mean annualized return |
 |---:|---:|---:|---:|---:|
 | 0 bps | 1.208 | 0.786 | 9.13% | 3.61% |
 | 5 bps | 0.833 | 0.189 | 6.34% | 0.82% |
 | 10 bps | 0.460 | -0.402 | 3.50% | -2.31% |
 | 20 bps | -0.282 | -1.536 | -2.38% | -10.12% |
 
-At 5 bps, all existing recent starts and the historical control remain
-positive. At 10 bps, the recent aggregate remains positive, but one recent
-Mechanism B start and both historical controls are negative. At 20 bps, only 2
-of 10 recent mechanism-start combinations remain positive and neither
-historical control does. Approximate recent break-even costs are 16.5 bps for
-Mechanism A and 15.2 bps for Mechanism B on a mean basis; the historical
-controls break even near 6.3--6.5 bps. Recent aggregate results therefore
-remain positive through 10 bps under these assumptions, while historical
-performance is much more transaction-cost sensitive. The historical break-even
-range makes execution quality a first-order forward-deployment issue; these
-assumed rates are not estimates of realistic observed live costs. See the full
-[transaction-cost report](results/transaction_cost_analysis/tca_summary.md).
+The historical control turns negative by 10 bps, with estimated one-way break-even costs near **6.3–6.5 bps**. Execution quality is therefore a central deployment risk. These are sensitivity assumptions, **not measured live transaction costs**. See the [Transaction-Cost Report](results/transaction_cost_analysis/tca_summary.md).
 
-## Methodology
+## Interpretation and Limitations
 
-The research pipeline is described in [`docs/methodology.md`](docs/methodology.md).
-At a high level it:
+**Walk-forward does not automatically mean untouched out-of-sample performance at every level.** Individual pairs are selected using preceding formation data and then traded forward. However, the portfolio, strategy combination, and allocation parameters were chosen after examining the reported historical windows. Consequently, the aggregate figures above are **research-window results, not an unbiased portfolio-level holdout estimate or a forward Sharpe forecast**.
 
-1. forms pairs from log-price data using Engle-Granger tests, OLS hedge ratios,
-   residual diagnostics, sector rules, and walk-forward formation windows;
-2. trades residual z-score excursions with locked entry statistics, a hedge-ratio
-   guard, stop and exit rules, earnings gates, and a loss-only calendar holding
-   limit;
-3. compares the legacy V1 reference-leg sizing with V2 fixed-total-gross sizing;
-4. replays recorded trade events and daily marks in one shared account; and
-5. ranks books across recent, historical, separate, rank-average, and joined
-   evidence before auditing the allocator.
+The study also has implementation limits:
 
-## Limitations
+- **Execution:** the replay does not model live bid/ask spreads, fills, market impact, two-leg execution delays, borrow availability, financing, or broker margin admission. The separate cost overlay is deliberately simplified.
+- **Capital and exposure:** pair overlap, variable portfolio gross leverage, and the absence of a broker-enforced gross/symbol cap limit deployability claims.
+- **Data:** historical universe snapshots, survivorship, corporate actions, missing prices, and vendor revisions may affect portability and replication.
+- **Statistical evidence:** overlapping recent starts, regime dependence, concentration, and adaptive model selection limit conclusions about persistence.
 
-The result is a research candidate, not evidence of live profitability. The
-base replay does not natively simulate observed execution friction. A separate
-historical transaction-cost sensitivity overlay uses assumed one-way all-in
-costs on traded notional; it is not a full execution model and does not
-estimate actual live commissions, bid/ask spread, slippage, or implementation
-shortfall. The replay and overlay do not model borrow, financing, partial
-fills, asynchronous two-leg execution, broker margin admission, or a
-deployable-capital policy. Gross leverage can exceed 1x, and pair overlap,
-calendar concentration, factor exposure, static-universe effects, and selection
-dependence remain material.
+The appropriate next test is a **frozen forward paper-trading study** with observed orders, fills, transaction costs, borrow constraints, exposure limits, and reconciliation. [Detailed limitations](docs/limitations.md).
 
-See [`docs/limitations.md`](docs/limitations.md) for the full boundary and the
-paper-trading validation gate.
+## Reproducibility and Research Record
 
-## Reproduce and Audit
+The default strategy definition is [`research/selected_book_config.json`](research/selected_book_config.json). Published compact analysis tables and diagnostic figures can be reviewed directly, but **the full raw runs needed to regenerate the selected portfolio are not included in this public repository**.
 
-Start with [`docs/reproducibility.md`](docs/reproducibility.md). The compact V2
-matrix summary, selected-book cross-check, and Clean40 audit are already
-generated artifacts. Full V2 regeneration requires the preserved local raw run
-trees and deterministic input snapshots; it is not required to read the public
-tables.
+An earlier experimental configuration and its original replay fixtures remain archived separately for provenance. These historical fixtures must not be presented as the final portfolio's raw inputs. Version-specific artifact names are retained in the technical files to avoid breaking reproducibility.
 
-The basic test command is:
+For environment setup and verification:
 
-```text
+```bash
+python -m pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-## Repository Guide
+Start with [Reproducibility](docs/reproducibility.md) for commands and input boundaries, and [Results Index](results/README.md) for the published research artifacts.
 
-- [`docs/README.md`](docs/README.md): public documentation index
-- [`docs/results.md`](docs/results.md): headline metrics and selection evidence
-- [`docs/robustness.md`](docs/robustness.md): starts, folds, concentration, and allocator checks
-- [`docs/methodology.md`](docs/methodology.md): signal, sizing, and replay definitions
-- [`docs/limitations.md`](docs/limitations.md): interpretation and live-readiness boundary
-- [`docs/reproducibility.md`](docs/reproducibility.md): commands, inputs, and provenance
-- [`docs/research_chronology.md`](docs/research_chronology.md): concise research chronology
-- [`docs/research_decision_log.md`](docs/research_decision_log.md): lower-level experiment log
-- [`results/README.md`](results/README.md): result-generation index and artifact boundaries
+### Further reading
+
+- [Methodology](docs/methodology.md) — pair formation, signals, sizing, shared-account mechanics
+- [Results](docs/results.md) — detailed portfolio rankings and performance
+- [Robustness](docs/robustness.md) — starts, concentration, allocator comparisons
+- [Research Decision Log](docs/research_decision_log.md) — retrospective experiment-by-experiment rationale and decisions
+- [Research Chronology](docs/research_chronology.md) — how the investigation evolved
+- [Documentation Index](docs/README.md) — additional technical and historical reports
 
 ## Research Status
 
-Historical strategy research is frozen. No further parameter, allocator, sizing,
-or book optimization is planned using the existing research windows, including
-in response to the transaction-cost overlay. The next validation stage is
-forward paper trading with observed execution costs and operational controls.
+Historical model and portfolio selection are **frozen**. No further tuning is planned on the research windows shown here; future evidence should come from forward paper trading rather than additional optimization of the historical record.
