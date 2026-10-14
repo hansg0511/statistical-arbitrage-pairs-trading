@@ -100,6 +100,17 @@ This closes the historical research phase. The book, V2 sizing, and Clean40
 allocator are frozen; the next validation stage is forward paper trading with
 observed execution costs and operational controls.
 
+## Factor Exposure Diagnostics
+
+The frozen selected portfolio was evaluated using daily FF3, Momentum and
+Short-Term Reversal returns with HAC standard errors. No alpha intercept is
+statistically significant at 5% across the historical control or overlapping
+recent starts. The short-term reversal factor has a positive significant loading
+throughout. This is descriptive evidence on historically selected paths, not a
+new holdout or a factor-neutral alpha claim. See
+[`docs/factor_exposure_analysis.md`](factor_exposure_analysis.md) and the
+[full regression table](../results/factor_exposure/selected_portfolio_factor_regressions.csv).
+
 ## Metric Convention Note
 
 The completed matrix report lists the V2 standalone historical score for the
